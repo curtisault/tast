@@ -2,7 +2,7 @@
 
 ## What is TAST?
 
-TAST (Test Abstract Syntax Tree) is a Rust CLI tool that models integration and E2E tests as directed graphs of connected assertions using a natural-language DSL. The primary output is a structured YAML test plan compiled from graph traversals. See `tast-project.md` for the full specification.
+TAST (Test Abstract Syntax Tree) is a Rust CLI tool that models integration and E2E tests as directed graphs of connected assertions using a natural-language DSL. The primary output is a structured YAML test plan compiled from graph traversals. See `README.md` for the full specification.
 
 ## Development Philosophy
 
@@ -54,6 +54,7 @@ tests/                  # Rust integration tests
 tests/tast/             # TAST self-validation .tast files (Phase 2+)
 tests/fixtures/         # Sample .tast files used by Rust tests
 plans/                  # Development planning documents
+docs/                   # Implementation details and documentation
 ```
 
 ## Current Phase
