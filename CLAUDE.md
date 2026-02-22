@@ -62,9 +62,15 @@ Phase 1: Foundation (MVP) — Parse `.tast` files, build the graph, output YAML 
 
 ## Build & Test Commands
 
+Use `just` for the standard workflow:
+
 ```bash
-cargo test              # Run all Rust tests — do this constantly
-cargo test -- --nocapture  # Run tests with stdout visible
-cargo clippy            # Lint check
-cargo fmt               # Format code
+just check              # Run all checks: tests + clippy (warnings=errors) + fmt check
+just test               # Run tests only
+just test-verbose       # Run tests with stdout visible
+just lint               # Run clippy only (warnings as errors)
+just fmt                # Auto-format code
+just fmt-check          # Check formatting without changes
 ```
+
+**Always run `just check` after every change.** All tests, clippy, and formatting must pass before moving on.
