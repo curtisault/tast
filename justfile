@@ -23,3 +23,16 @@ fmt:
 # Check formatting without changing files
 fmt-check:
     cargo fmt --check
+
+# Run tast plan on a fixture file
+plan file:
+    cargo run -- plan {{file}}
+
+# Run tast validate on a fixture file
+validate file:
+    cargo run -- validate {{file}}
+
+# Smoke test: plan and validate the full auth fixture
+smoke:
+    cargo run -- validate tests/fixtures/full_auth.tast
+    cargo run -- plan tests/fixtures/full_auth.tast
