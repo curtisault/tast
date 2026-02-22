@@ -1,0 +1,8 @@
+graph SingleNode {
+  node Register {
+    describe "A new user registers"
+    given a user with valid credentials
+    when the user submits the registration form
+    then the system creates a new account
+  }
+}

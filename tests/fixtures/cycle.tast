@@ -1,0 +1,6 @@
+graph Cyclic {
+  node A {}
+  node B {}
+  A -> B
+  B -> A
+}

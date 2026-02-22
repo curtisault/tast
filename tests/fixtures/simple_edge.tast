@@ -1,0 +1,20 @@
+graph SimpleEdge {
+  node A {
+    describe "First node"
+    given a starting state
+    when an action occurs
+    then a result is produced
+  }
+
+  node B {
+    describe "Second node"
+    given the result from A
+    when processing continues
+    then the final state is reached
+  }
+
+  A -> B {
+    passes { result_id }
+    describe "A flows into B"
+  }
+}

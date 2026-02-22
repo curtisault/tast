@@ -1,0 +1,56 @@
+graph UserAuthentication {
+
+  node RegisterUser {
+    describe "A new user registers with valid credentials"
+
+    given a user with {
+      email: "test@example.com"
+      password: "secure123"
+    }
+
+    when the user submits the registration form
+    then the system creates a new account
+    and the user receives a confirmation email
+  }
+
+  node LoginUser {
+    describe "A registered user logs in"
+
+    given a registered user with email "test@example.com"
+    when the user submits valid credentials
+    then the system returns an auth token
+    and the session is active
+  }
+
+  node AccessDashboard {
+    describe "An authenticated user accesses the dashboard"
+
+    given an active session
+    when the user navigates to /dashboard
+    then the dashboard loads with user-specific data
+  }
+
+  node LogoutUser {
+    describe "A user logs out of their session"
+
+    given an active session
+    when the user clicks logout
+    then the session is destroyed
+    and the user is redirected to the login page
+  }
+
+  RegisterUser -> LoginUser {
+    passes { user_id, email }
+    describe "After registration, the user can log in"
+  }
+
+  LoginUser -> AccessDashboard {
+    passes { auth_token, session_id }
+    describe "Login grants access to protected routes"
+  }
+
+  LoginUser -> LogoutUser {
+    passes { session_id }
+    describe "A logged-in user can log out"
+  }
+}

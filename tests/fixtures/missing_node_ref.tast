@@ -1,0 +1,4 @@
+graph BadRef {
+  node A {}
+  A -> NonExistent
+}

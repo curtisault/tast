@@ -1,0 +1,5 @@
+graph Broken {
+  node A {
+    describe "missing closing brace
+  }
+}
