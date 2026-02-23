@@ -1,0 +1,10 @@
+import Auth from "./importable_auth.tast"
+
+graph OrderFlow {
+  node PlaceOrder {
+    describe "User places an order"
+    given a logged-in user
+    when the user submits an order
+    then the order is created
+  }
+}

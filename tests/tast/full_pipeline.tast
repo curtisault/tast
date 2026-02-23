@@ -1,0 +1,81 @@
+# Full Pipeline — end-to-end .tast file -> YAML plan
+#
+# This self-validation file describes TAST's complete pipeline
+# from reading a .tast file to emitting a YAML test plan.
+
+graph FullPipeline {
+
+  node ReadFile {
+    describe "Read a .tast source file from disk"
+
+    given a path to a .tast file
+    when the file contents are read
+    then the source text is available for parsing
+  }
+
+  node Parse {
+    describe "Parse source text into an AST"
+
+    given source text from a .tast file
+    when the lexer and parser process the input
+    then a list of AST graphs is produced
+    and each graph contains nodes, edges, and metadata
+  }
+
+  node Lower {
+    describe "Lower AST to validated IR"
+
+    given a parsed AST graph
+    when the IR lowering and validation runs
+    then a validated IR graph with resolved references is produced
+  }
+
+  node Build {
+    describe "Build a petgraph from IR"
+
+    given a validated IR graph
+    when the graph builder runs
+    then a TestGraph with DiGraph and node indices is produced
+  }
+
+  node Compile {
+    describe "Compile graph into a test plan"
+
+    given a TestGraph
+    when the plan compiler traverses the graph
+    then an ordered TestPlan with metadata and steps is produced
+  }
+
+  node Emit {
+    describe "Emit the test plan as YAML"
+
+    given a compiled TestPlan
+    when the YAML emitter serializes the plan
+    then valid YAML output is produced
+  }
+
+  ReadFile -> Parse {
+    passes { source_text }
+    describe "Source text flows from file reader to parser"
+  }
+
+  Parse -> Lower {
+    passes { ast_graph }
+    describe "AST graph flows from parser to IR lowering"
+  }
+
+  Lower -> Build {
+    passes { ir_graph }
+    describe "IR graph flows from lowering to graph builder"
+  }
+
+  Build -> Compile {
+    passes { test_graph }
+    describe "TestGraph flows from builder to plan compiler"
+  }
+
+  Compile -> Emit {
+    passes { test_plan }
+    describe "TestPlan flows from compiler to YAML emitter"
+  }
+}

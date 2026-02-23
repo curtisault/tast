@@ -187,17 +187,17 @@ impl<'a> Parser<'a> {
                         }
                     }
 
-                    // Validate edge references
+                    // Validate edge references (skip dotted names — those are cross-graph refs)
                     let node_names: std::collections::HashSet<&str> =
                         nodes.iter().map(|n| n.name.as_str()).collect();
                     for edge in &edges {
-                        if !node_names.contains(edge.from.as_str()) {
+                        if !edge.from.contains('.') && !node_names.contains(edge.from.as_str()) {
                             return Err(ParseError {
                                 message: format!("edge references unknown node '{}'", edge.from),
                                 span: edge.span,
                             });
                         }
-                        if !node_names.contains(edge.to.as_str()) {
+                        if !edge.to.contains('.') && !node_names.contains(edge.to.as_str()) {
                             return Err(ParseError {
                                 message: format!("edge references unknown node '{}'", edge.to),
                                 span: edge.span,

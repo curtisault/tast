@@ -1,0 +1,69 @@
+# Parser Pipeline — models source text -> tokens -> AST
+#
+# This self-validation file describes TAST's own parse pipeline
+# as a directed graph of test scenarios.
+
+graph ParserPipeline {
+
+  node ReadSource {
+    describe "Read a .tast source file from disk"
+
+    given a valid .tast file on disk
+    when the file is read into memory
+    then the source text is available as a string
+  }
+
+  node Tokenize {
+    describe "Tokenize source text into a stream of tokens"
+
+    given source text from a .tast file
+    when the lexer processes the source text
+    then a stream of typed tokens is produced
+    and each token has a span with line and column
+  }
+
+  node ParseTokens {
+    describe "Parse a token stream into an AST"
+
+    given a valid stream of tokens
+    when the parser processes the token stream
+    then an AST with graphs, nodes, and edges is produced
+    and node names and edge references are validated
+  }
+
+  node HandleLexError {
+    describe "Handle errors during lexing"
+
+    given source text with invalid syntax
+    when the lexer encounters an unrecognized token
+    then a lex error with span information is returned
+    and the error message identifies the problem location
+  }
+
+  node HandleParseError {
+    describe "Handle errors during parsing"
+
+    given a token stream with structural errors
+    when the parser encounters unexpected tokens
+    then a parse error with span information is returned
+    and the error message describes the expected syntax
+  }
+
+  ReadSource -> Tokenize {
+    passes { source_text }
+    describe "Source text flows from file reader to lexer"
+  }
+
+  Tokenize -> ParseTokens {
+    passes { token_stream }
+    describe "Token stream flows from lexer to parser"
+  }
+
+  Tokenize -> HandleLexError {
+    describe "Lexer errors are caught and reported"
+  }
+
+  ParseTokens -> HandleParseError {
+    describe "Parser errors are caught and reported"
+  }
+}
