@@ -1,0 +1,45 @@
+# Plan Pipeline — models graph -> traversal -> plan -> YAML
+#
+# This self-validation file describes TAST's plan compilation
+# stage as a directed graph of test scenarios.
+
+graph PlanPipeline {
+
+  node TraverseGraph {
+    describe "Traverse the graph in topological order"
+
+    given a valid acyclic test graph
+    when topological sort is applied
+    then nodes are ordered respecting dependency edges
+    and all nodes are visited exactly once
+  }
+
+  node CompilePlan {
+    describe "Compile traversal order into a structured test plan"
+
+    given an ordered list of node indices
+    when the plan compiler processes each node
+    then steps are categorized into preconditions, actions, and assertions
+    and inputs and outputs are resolved from edge passes
+    and depends_on is populated from incoming edges
+  }
+
+  node EmitYAML {
+    describe "Emit the compiled plan as YAML output"
+
+    given a compiled TestPlan structure
+    when the YAML emitter serializes the plan
+    then valid YAML output is produced
+    and the output includes plan metadata and ordered steps
+  }
+
+  TraverseGraph -> CompilePlan {
+    passes { sorted_nodes }
+    describe "Topological order flows to plan compiler"
+  }
+
+  CompilePlan -> EmitYAML {
+    passes { test_plan }
+    describe "Compiled plan flows to YAML emitter"
+  }
+}

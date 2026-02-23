@@ -1,7 +1,7 @@
 use petgraph::Direction;
-use petgraph::algo::toposort;
 
 use crate::graph::builder::TestGraph;
+use crate::graph::traversal::{TraversalStrategy, traverse};
 use crate::ir::IrStepType;
 use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry, TestPlan};
 
@@ -11,10 +11,19 @@ use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry, TestPlan
 ///
 /// Returns an error string if the graph contains a cycle.
 pub fn compile(tg: &TestGraph) -> Result<TestPlan, String> {
-    let sorted = toposort(&tg.graph, None).map_err(|e| {
-        let node_name = &tg.graph[e.node_id()].name;
-        format!("cycle detected involving node '{node_name}'")
-    })?;
+    compile_with_strategy(tg, TraversalStrategy::Topological)
+}
+
+/// Compile a test graph into an ordered test plan using the given traversal strategy.
+///
+/// # Errors
+///
+/// Returns an error string if traversal fails (e.g., cycle detected for topological).
+pub fn compile_with_strategy(
+    tg: &TestGraph,
+    strategy: TraversalStrategy,
+) -> Result<TestPlan, String> {
+    let sorted = traverse(tg, strategy)?;
 
     let mut steps = Vec::with_capacity(sorted.len());
 
@@ -108,7 +117,7 @@ pub fn compile(tg: &TestGraph) -> Result<TestPlan, String> {
     Ok(TestPlan {
         plan: PlanMetadata {
             name: tg.name.clone(),
-            traversal: "topological".to_owned(),
+            traversal: strategy.to_string(),
             nodes_total: tg.graph.node_count(),
             edges_total: tg.graph.edge_count(),
         },

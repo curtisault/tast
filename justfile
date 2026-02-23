@@ -32,7 +32,12 @@ plan file:
 validate file:
     cargo run -- validate {{file}}
 
-# Smoke test: plan and validate the full auth fixture
+# Smoke test: plan and validate the full auth fixture + self-validation files
 smoke:
     cargo run -- validate tests/fixtures/full_auth.tast
     cargo run -- plan tests/fixtures/full_auth.tast
+    cargo run -- validate tests/tast/parser_pipeline.tast tests/tast/graph_pipeline.tast tests/tast/plan_pipeline.tast tests/tast/full_pipeline.tast
+    cargo run -- plan tests/tast/full_pipeline.tast
+    cargo run -- plan tests/fixtures/full_auth.tast --strategy dfs
+    cargo run -- visualize tests/fixtures/full_auth.tast --format mermaid
+    cargo run -- list nodes tests/fixtures/full_auth.tast

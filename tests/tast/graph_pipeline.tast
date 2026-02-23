@@ -1,0 +1,84 @@
+# Graph Pipeline — models AST -> IR -> petgraph
+#
+# This self-validation file describes TAST's graph construction
+# pipeline as a directed graph of test scenarios.
+
+graph GraphPipeline {
+
+  node LowerToIR {
+    describe "Lower an AST graph into a validated IR graph"
+
+    given a parsed AST graph
+    when the AST is lowered to IR
+    then IR nodes and edges are produced with resolved indices
+    and step types are mapped from AST to IR enums
+  }
+
+  node ValidateIR {
+    describe "Validate the IR graph for semantic correctness"
+
+    given an IR graph with nodes and edges
+    when semantic validation runs
+    then duplicate node names are detected
+    and unsatisfied requires are reported
+  }
+
+  node BuildGraph {
+    describe "Build a petgraph DiGraph from validated IR"
+
+    given a validated IR graph
+    when the graph builder processes the IR
+    then a petgraph DiGraph with IrNode and IrEdge weights is created
+    and node indices map IR positions to petgraph indices
+  }
+
+  node DetectCycles {
+    describe "Detect cycles in the constructed graph"
+
+    given a petgraph DiGraph
+    when cycle detection runs via topological sort
+    then cyclic graphs are identified
+    and acyclic graphs pass validation
+  }
+
+  node FindRoots {
+    describe "Find root nodes with no incoming edges"
+
+    given a petgraph DiGraph
+    when root node analysis runs
+    then nodes with zero in-degree are returned
+  }
+
+  node FindLeaves {
+    describe "Find leaf nodes with no outgoing edges"
+
+    given a petgraph DiGraph
+    when leaf node analysis runs
+    then nodes with zero out-degree are returned
+  }
+
+  LowerToIR -> ValidateIR {
+    passes { ir_graph }
+    describe "IR graph flows to semantic validation"
+  }
+
+  ValidateIR -> BuildGraph {
+    passes { validated_ir }
+    describe "Validated IR flows to graph builder"
+  }
+
+  BuildGraph -> DetectCycles {
+    passes { test_graph }
+    describe "Built graph flows to cycle detection"
+  }
+
+  BuildGraph -> FindRoots {
+    passes { test_graph }
+    describe "Built graph flows to root analysis"
+  }
+
+  BuildGraph -> FindLeaves {
+    passes { test_graph }
+    describe "Built graph flows to leaf analysis"
+  }
+}

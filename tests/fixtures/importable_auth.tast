@@ -1,0 +1,20 @@
+graph Auth {
+  node Login {
+    describe "User logs in"
+    given valid credentials
+    when the user submits the login form
+    then an auth token is returned
+  }
+
+  node Logout {
+    describe "User logs out"
+    given an active session
+    when the user clicks logout
+    then the session is destroyed
+  }
+
+  Login -> Logout {
+    passes { session_id }
+    describe "A logged-in user can log out"
+  }
+}

@@ -1,3 +1,4 @@
+pub mod resolve;
 mod validate;
 
 use crate::parser::ast;
@@ -110,19 +111,28 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
 
     let mut edges = Vec::with_capacity(ast_graph.edges.len());
     for e in &ast_graph.edges {
-        let from_idx = node_index.get(e.from.as_str()).ok_or_else(|| ParseError {
-            message: format!("edge references unknown node '{}'", e.from),
-            span: e.span,
-        })?;
-        let to_idx = node_index.get(e.to.as_str()).ok_or_else(|| ParseError {
-            message: format!("edge references unknown node '{}'", e.to),
-            span: e.span,
-        })?;
+        // Dotted names (e.g. "Auth.Login") are cross-graph refs resolved later
+        let from_idx = if e.from.contains('.') {
+            0 // placeholder — resolved by resolve_cross_graph_edges
+        } else {
+            *node_index.get(e.from.as_str()).ok_or_else(|| ParseError {
+                message: format!("edge references unknown node '{}'", e.from),
+                span: e.span,
+            })?
+        };
+        let to_idx = if e.to.contains('.') {
+            0 // placeholder — resolved by resolve_cross_graph_edges
+        } else {
+            *node_index.get(e.to.as_str()).ok_or_else(|| ParseError {
+                message: format!("edge references unknown node '{}'", e.to),
+                span: e.span,
+            })?
+        };
         edges.push(IrEdge {
             from: e.from.clone(),
             to: e.to.clone(),
-            from_index: *from_idx,
-            to_index: *to_idx,
+            from_index: from_idx,
+            to_index: to_idx,
             passes: e.passes.clone(),
             description: e.description.clone(),
             span: e.span,
