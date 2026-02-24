@@ -1,8 +1,12 @@
+pub mod fixture;
+pub mod params;
 pub mod resolve;
 mod validate;
 
 use crate::parser::ast;
 use crate::parser::error::ParseError;
+use crate::parser::extract::extract_data;
+use crate::parser::normalize::normalize;
 use crate::util::span::Span;
 
 pub use validate::validate_graph;
@@ -13,6 +17,7 @@ pub struct IrGraph {
     pub name: String,
     pub nodes: Vec<IrNode>,
     pub edges: Vec<IrEdge>,
+    pub fixtures: Vec<fixture::IrFixture>,
     pub span: Span,
 }
 
@@ -43,8 +48,13 @@ pub struct IrEdge {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IrStep {
     pub step_type: IrStepType,
+    /// Original step text, preserved verbatim.
     pub text: String,
+    /// Normalized text for comparison: lowercased, articles stripped.
+    pub normalized_text: String,
     pub data: Vec<(String, String)>,
+    /// Resolved parameter bindings for parameterized steps.
+    pub parameters: Vec<params::ParameterBinding>,
 }
 
 /// Step type in the IR (mirrors AST but decoupled).
@@ -64,6 +74,10 @@ pub enum IrStepType {
 /// Returns a [`ParseError`] if semantic validation fails
 /// (e.g., unsatisfied requires, duplicate nodes).
 pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
+    // Lower and validate fixtures
+    let fixtures = fixture::lower_fixtures(&ast_graph.fixtures);
+    fixture::validate_fixtures(&fixtures)?;
+
     let nodes: Vec<IrNode> = ast_graph
         .nodes
         .iter()
@@ -73,18 +87,11 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
             steps: n
                 .steps
                 .iter()
-                .map(|s| IrStep {
-                    step_type: match s.step_type {
-                        ast::StepType::Given => IrStepType::Given,
-                        ast::StepType::When => IrStepType::When,
-                        ast::StepType::Then => IrStepType::Then,
-                        ast::StepType::And => IrStepType::And,
-                        ast::StepType::But => IrStepType::But,
-                        #[allow(unreachable_patterns)]
-                        _ => IrStepType::Given,
-                    },
-                    text: s.text.clone(),
-                    data: s
+                .map(|s| {
+                    let normalized = normalize(&s.text);
+
+                    // Start with explicit data block fields
+                    let mut data: Vec<(String, String)> = s
                         .data
                         .as_ref()
                         .map(|d| {
@@ -93,7 +100,41 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
                                 .map(|(k, v)| (k.clone(), format_value(v)))
                                 .collect()
                         })
-                        .unwrap_or_default(),
+                        .unwrap_or_default();
+
+                    // Merge in extracted data from prose (explicit fields take precedence)
+                    let extracted = extract_data(&s.text);
+                    for (key, val) in extracted.fields {
+                        if !data.iter().any(|(k, _)| *k == key) {
+                            data.push((key, val));
+                        }
+                    }
+
+                    // Apply fixture data if step references a fixture
+                    if let Some(fixture_name) = fixture::extract_fixture_ref(&s.text)
+                        && let Some(f) = fixture::resolve_fixture(&fixtures, &fixture_name)
+                    {
+                        fixture::apply_fixture(&mut data, f);
+                    }
+
+                    // Resolve parameters from step fragments against available data
+                    let parameters = params::resolve_parameters(&s.fragments, &data);
+
+                    IrStep {
+                        step_type: match s.step_type {
+                            ast::StepType::Given => IrStepType::Given,
+                            ast::StepType::When => IrStepType::When,
+                            ast::StepType::Then => IrStepType::Then,
+                            ast::StepType::And => IrStepType::And,
+                            ast::StepType::But => IrStepType::But,
+                            #[allow(unreachable_patterns)]
+                            _ => IrStepType::Given,
+                        },
+                        text: s.text.clone(),
+                        normalized_text: normalized.normalized,
+                        data,
+                        parameters,
+                    }
                 })
                 .collect(),
             tags: n.tags.iter().map(|t| t.0.clone()).collect(),
@@ -143,6 +184,7 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
         name: ast_graph.name.clone(),
         nodes,
         edges,
+        fixtures,
         span: ast_graph.span,
     };
 
@@ -362,5 +404,311 @@ mod tests {
         );
         assert_eq!(ir.edges[0].passes, vec!["x", "y"]);
         assert_eq!(ir.edges[0].description.as_deref(), Some("edge desc"));
+    }
+
+    // --- A2: Normalizer integration tests ---
+
+    #[test]
+    fn ir_step_preserves_original_text() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email
+                }
+            }"#,
+        );
+        assert_eq!(ir.nodes[0].steps[0].text, "a user with email");
+    }
+
+    #[test]
+    fn ir_step_has_normalized_text() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email
+                }
+            }"#,
+        );
+        // normalized_text should be non-empty
+        assert!(!ir.nodes[0].steps[0].normalized_text.is_empty());
+    }
+
+    #[test]
+    fn ir_step_normalized_strips_articles() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email
+                    when the user submits the form
+                }
+            }"#,
+        );
+        assert_eq!(ir.nodes[0].steps[0].normalized_text, "user with email");
+        assert_eq!(ir.nodes[0].steps[1].normalized_text, "user submits form");
+    }
+
+    #[test]
+    fn ir_step_normalized_equivalent_phrasings() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email
+                }
+                node B {
+                    given the user has email
+                }
+            }"#,
+        );
+        let a_norm = &ir.nodes[0].steps[0].normalized_text;
+        let b_norm = &ir.nodes[1].steps[0].normalized_text;
+        // Both should have articles stripped
+        assert!(!a_norm.starts_with("a "));
+        assert!(!b_norm.starts_with("the "));
+        // Both should contain "user" and "email"
+        assert!(a_norm.contains("user"));
+        assert!(a_norm.contains("email"));
+        assert!(b_norm.contains("user"));
+        assert!(b_norm.contains("email"));
+    }
+
+    #[test]
+    fn ir_step_data_unaffected_by_normalization() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with {
+                        email: "test@example.com"
+                    }
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert_eq!(step.data, vec![("email".into(), "test@example.com".into())]);
+    }
+
+    #[test]
+    fn ir_existing_tests_still_pass() {
+        // Verify that a full graph with steps, edges, passes, requires
+        // still lowers correctly with the new normalized_text field.
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given first
+                    when second
+                    then third
+                }
+                node B { requires { token } }
+                A -> B { passes { token } }
+            }"#,
+        );
+        assert_eq!(ir.nodes[0].steps.len(), 3);
+        assert_eq!(ir.nodes[0].steps[0].text, "first");
+        assert_eq!(ir.nodes[1].requires, vec!["token"]);
+        assert_eq!(ir.edges[0].passes, vec!["token"]);
+    }
+
+    // --- B2: Extractor integration tests ---
+
+    #[test]
+    fn ir_step_extracts_inline_data_from_text() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email "test@example.com"
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(
+            step.data
+                .contains(&("email".into(), "test@example.com".into())),
+            "expected extracted email, got: {:?}",
+            step.data
+        );
+    }
+
+    #[test]
+    fn ir_step_explicit_data_takes_precedence() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email "extracted@example.com" {
+                        email: "explicit@example.com"
+                    }
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        // Explicit data block value should win
+        let email = step.data.iter().find(|(k, _)| k == "email").unwrap();
+        assert_eq!(email.1, "explicit@example.com");
+        // Should not have duplicates
+        let email_count = step.data.iter().filter(|(k, _)| k == "email").count();
+        assert_eq!(email_count, 1);
+    }
+
+    #[test]
+    fn ir_step_merges_extracted_and_explicit() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with role "admin" {
+                        email: "test@example.com"
+                    }
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        // Should have both: email from explicit, role from extraction
+        assert!(step.data.iter().any(|(k, _)| k == "email"));
+        assert!(step.data.iter().any(|(k, _)| k == "role"));
+    }
+
+    #[test]
+    fn ir_step_no_extraction_when_no_patterns() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with valid credentials
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(step.data.is_empty());
+    }
+
+    #[test]
+    fn ir_step_extraction_with_binding_verb() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user has email "alice@example.com"
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(
+            step.data
+                .contains(&("email".into(), "alice@example.com".into())),
+            "expected extracted email, got: {:?}",
+            step.data
+        );
+    }
+
+    #[test]
+    fn ir_step_extraction_preserves_step_text() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user with email "test@example.com"
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        // Original text preserved, including the quoted string
+        assert!(step.text.contains("test@example.com"));
+    }
+
+    // --- D2: Fixture references in steps ---
+
+    #[test]
+    fn step_with_fixture_ref_gets_fixture_data() {
+        let ir = lower_one(
+            r#"graph G {
+                fixture AdminUser {
+                    role: "admin"
+                    email: "admin@example.com"
+                }
+                node A {
+                    given a user from fixture AdminUser
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(step.data.iter().any(|(k, v)| k == "role" && v == "admin"));
+        assert!(
+            step.data
+                .iter()
+                .any(|(k, v)| k == "email" && v == "admin@example.com")
+        );
+    }
+
+    #[test]
+    fn step_with_fixture_ref_merges_with_explicit_data() {
+        let ir = lower_one(
+            r#"graph G {
+                fixture AdminUser {
+                    role: "admin"
+                    email: "fixture@example.com"
+                }
+                node A {
+                    given a user from fixture AdminUser {
+                        email: "explicit@example.com"
+                    }
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        // Explicit data takes precedence
+        let email = step.data.iter().find(|(k, _)| k == "email").unwrap();
+        assert_eq!(email.1, "explicit@example.com");
+        // Fixture-only fields still added
+        assert!(step.data.iter().any(|(k, v)| k == "role" && v == "admin"));
+    }
+
+    #[test]
+    fn step_with_unknown_fixture_has_no_fixture_data() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    given a user from fixture UnknownFixture
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        // No fixture data merged — unknown fixture silently ignored
+        assert!(step.data.is_empty());
+    }
+
+    #[test]
+    fn fixture_ref_in_given_step() {
+        let ir = lower_one(
+            r#"graph G {
+                fixture Config { key: "value" }
+                node A {
+                    given config from fixture Config
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(step.data.iter().any(|(k, v)| k == "key" && v == "value"));
+    }
+
+    #[test]
+    fn fixture_ref_in_when_step() {
+        let ir = lower_one(
+            r#"graph G {
+                fixture Payload { body: "test" }
+                node A {
+                    when the user sends from fixture Payload
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(step.data.iter().any(|(k, v)| k == "body" && v == "test"));
+    }
+
+    #[test]
+    fn fixture_ref_in_then_step() {
+        let ir = lower_one(
+            r#"graph G {
+                fixture Expected { status: "200" }
+                node A {
+                    then response matches from fixture Expected
+                }
+            }"#,
+        );
+        let step = &ir.nodes[0].steps[0];
+        assert!(step.data.iter().any(|(k, v)| k == "status" && v == "200"));
     }
 }

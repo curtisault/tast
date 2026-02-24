@@ -293,6 +293,7 @@ mod tests {
                 description: None,
                 span: Span::default(),
             }],
+            fixtures: vec![],
             span: Span::default(),
         };
 
@@ -321,6 +322,7 @@ mod tests {
                 description: None,
                 span: Span::default(),
             }],
+            fixtures: vec![],
             span: Span::default(),
         };
         let result = resolve_cross_graph_edges(&mut graph, &resolved);
@@ -350,6 +352,7 @@ mod tests {
                 description: None,
                 span: Span::default(),
             }],
+            fixtures: vec![],
             span: Span::default(),
         };
         let result = resolve_cross_graph_edges(&mut graph, &resolved);
@@ -386,6 +389,7 @@ mod tests {
                 description: None,
                 span: Span::default(),
             }],
+            fixtures: vec![],
             span: Span::default(),
         };
 
@@ -443,6 +447,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            fixtures: vec![],
             span: Span::default(),
         };
 

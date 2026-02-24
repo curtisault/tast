@@ -26,6 +26,10 @@ enum Commands {
         #[arg(short, long, default_value = "topological")]
         strategy: String,
 
+        /// Output format (yaml, markdown, junit)
+        #[arg(short = 'F', long, default_value = "yaml")]
+        format: String,
+
         /// Filter nodes by tag predicate
         #[arg(short, long)]
         filter: Option<String>,
@@ -77,6 +81,7 @@ fn main() {
             files,
             output,
             strategy,
+            format,
             filter,
             from,
             to,
@@ -88,6 +93,7 @@ fn main() {
             let options = PlanOptions {
                 output,
                 strategy,
+                format,
                 filter,
                 from,
                 to,

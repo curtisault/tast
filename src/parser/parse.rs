@@ -1,5 +1,5 @@
 use crate::parser::ast::{
-    DataBlock, Edge, Fixture, Graph, Import, Node, Step, StepType, Tag, Value,
+    DataBlock, Edge, Fixture, Graph, Import, Node, Step, StepFragment, StepType, Tag, Value,
 };
 use crate::parser::error::ParseError;
 use crate::parser::lexer::{Token, TokenKind, tokenize};
@@ -349,15 +349,43 @@ impl<'a> Parser<'a> {
         };
         let start_span = tok.span;
 
-        // The lexer already captured free text after the keyword.
-        // Check if the next token is FreeText.
+        // The lexer already captured free text and parameter tokens after the keyword.
         let mut text = String::new();
+        let mut fragments = Vec::new();
         self.skip_trivia();
-        if self.pos < self.tokens.len()
-            && let TokenKind::FreeText(ref t) = self.tokens[self.pos].kind
-        {
-            text = t.clone();
-            self.pos += 1;
+
+        // Collect all FreeText and Parameter tokens that form the step text.
+        while self.pos < self.tokens.len() {
+            match &self.tokens[self.pos].kind {
+                TokenKind::FreeText(t) => {
+                    if !text.is_empty() {
+                        text.push(' ');
+                    }
+                    text.push_str(t);
+                    fragments.push(StepFragment::Text(t.clone()));
+                    self.pos += 1;
+                }
+                TokenKind::Parameter(name) => {
+                    // Reconstruct the original <name> in the text field
+                    if !text.is_empty() {
+                        text.push(' ');
+                    }
+                    text.push('<');
+                    text.push_str(name);
+                    text.push('>');
+                    fragments.push(StepFragment::Parameter(name.clone()));
+                    self.pos += 1;
+                }
+                _ => break,
+            }
+        }
+
+        // If there are no parameters, keep fragments empty for backward compat
+        let has_params = fragments
+            .iter()
+            .any(|f| matches!(f, StepFragment::Parameter(_)));
+        if !has_params {
+            fragments.clear();
         }
 
         // Check for inline data block
@@ -370,6 +398,7 @@ impl<'a> Parser<'a> {
         Ok(Step {
             step_type,
             text,
+            fragments,
             data,
             span: start_span,
         })
@@ -1233,5 +1262,63 @@ mod tests {
             "message should be helpful, got: {}",
             err.message
         );
+    }
+
+    #[test]
+    fn parses_step_with_parameter() {
+        let input = "graph G {\n  node A {\n    given a user with email <email>\n  }\n}";
+        let graphs = parse(input).expect("should parse");
+        let step = &graphs[0].nodes[0].steps[0];
+        assert_eq!(step.text, "a user with email <email>");
+        assert_eq!(step.fragments.len(), 2);
+        assert_eq!(
+            step.fragments[0],
+            StepFragment::Text("a user with email".into())
+        );
+        assert_eq!(step.fragments[1], StepFragment::Parameter("email".into()));
+    }
+
+    #[test]
+    fn parses_step_with_multiple_parameters() {
+        let input =
+            "graph G {\n  node A {\n    when the user enters <username> and <password>\n  }\n}";
+        let graphs = parse(input).expect("should parse");
+        let step = &graphs[0].nodes[0].steps[0];
+        assert_eq!(step.text, "the user enters <username> and <password>");
+        assert_eq!(step.fragments.len(), 4);
+        assert_eq!(
+            step.fragments[0],
+            StepFragment::Text("the user enters".into())
+        );
+        assert_eq!(
+            step.fragments[1],
+            StepFragment::Parameter("username".into())
+        );
+        assert_eq!(step.fragments[2], StepFragment::Text("and".into()));
+        assert_eq!(
+            step.fragments[3],
+            StepFragment::Parameter("password".into())
+        );
+    }
+
+    #[test]
+    fn parses_step_parameters_in_fragments() {
+        let input = "graph G {\n  node A {\n    then response is <status>\n  }\n}";
+        let graphs = parse(input).expect("should parse");
+        let step = &graphs[0].nodes[0].steps[0];
+        assert!(
+            step.fragments
+                .iter()
+                .any(|f| *f == StepFragment::Parameter("status".into()))
+        );
+    }
+
+    #[test]
+    fn parses_step_without_parameters_has_empty_fragments() {
+        let input = "graph G {\n  node A {\n    given a user with valid credentials\n  }\n}";
+        let graphs = parse(input).expect("should parse");
+        let step = &graphs[0].nodes[0].steps[0];
+        assert_eq!(step.text, "a user with valid credentials");
+        assert!(step.fragments.is_empty());
     }
 }

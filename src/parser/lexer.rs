@@ -38,6 +38,9 @@ pub enum TokenKind {
     /// Free-form text after step keywords (given/when/then/and/but).
     FreeText(String),
 
+    /// A `<name>` parameter placeholder inside step text.
+    Parameter(String),
+
     /// A `# comment` line.
     Comment(String),
 
@@ -287,7 +290,8 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                     span: Span::new(start, end, line, start_col),
                 });
 
-                // After step keywords, consume free text until end of line or data block
+                // After step keywords, consume free text until end of line or data block.
+                // Detect `<name>` parameter placeholders and emit them as separate tokens.
                 if is_step_keyword {
                     // Skip whitespace (not newlines)
                     while let Some(&(_, c)) = chars.peek() {
@@ -299,24 +303,92 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                         }
                     }
 
-                    // Collect free text until newline, '{', or EOF
+                    // Collect free text, splitting on <param> patterns
+                    let mut text_buf = String::new();
                     let text_start = chars.peek().map_or(input.len(), |&(i, _)| i);
-                    let text_start_col = col;
-                    let mut text_end = text_start;
+                    let _text_start_col = col;
+                    let mut seg_start = text_start;
+                    let mut seg_start_col = col;
+
                     while let Some(&(i, c)) = chars.peek() {
                         if c == '\n' || c == '{' {
                             break;
                         }
-                        text_end = i + c.len_utf8();
-                        chars.next();
-                        col += 1;
+
+                        if c == '<' {
+                            // Try to read a parameter: <identifier>
+                            let angle_pos = i;
+                            let angle_col = col;
+                            chars.next();
+                            col += 1;
+
+                            let mut param_name = String::new();
+                            let mut valid = false;
+                            while let Some(&(_, pc)) = chars.peek() {
+                                if pc == '>' {
+                                    chars.next();
+                                    col += 1;
+                                    valid = !param_name.is_empty();
+                                    break;
+                                }
+                                if pc == '\n' || pc == '{' || pc == '<' {
+                                    break;
+                                }
+                                if pc.is_ascii_alphanumeric() || pc == '_' {
+                                    param_name.push(pc);
+                                    chars.next();
+                                    col += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            if valid {
+                                // Flush accumulated text before the parameter
+                                let trimmed = text_buf.trim();
+                                if !trimmed.is_empty() {
+                                    tokens.push(Token {
+                                        kind: TokenKind::FreeText(trimmed.to_owned()),
+                                        span: Span::new(seg_start, angle_pos, line, seg_start_col),
+                                    });
+                                }
+                                text_buf.clear();
+
+                                // Emit the parameter token
+                                tokens.push(Token {
+                                    kind: TokenKind::Parameter(param_name),
+                                    span: Span::new(
+                                        angle_pos,
+                                        angle_pos + col - angle_col,
+                                        line,
+                                        angle_col,
+                                    ),
+                                });
+
+                                // Update segment start for next text
+                                seg_start = chars.peek().map_or(input.len(), |&(idx, _)| idx);
+                                seg_start_col = col;
+                            } else {
+                                // Not a valid parameter — treat '<' and consumed chars as text
+                                text_buf.push('<');
+                                text_buf.push_str(&param_name);
+                                // If we stopped at '>', we already consumed it
+                                // Otherwise the char is still in the iterator
+                            }
+                        } else {
+                            text_buf.push(c);
+                            chars.next();
+                            col += 1;
+                        }
                     }
 
-                    let text = input[text_start..text_end].trim_end();
-                    if !text.is_empty() {
+                    // Flush remaining text
+                    let trimmed = text_buf.trim_end();
+                    if !trimmed.is_empty() {
+                        let end = chars.peek().map_or(input.len(), |&(idx, _)| idx);
                         tokens.push(Token {
-                            kind: TokenKind::FreeText(text.to_owned()),
-                            span: Span::new(text_start, text_end, line, text_start_col),
+                            kind: TokenKind::FreeText(trimmed.to_owned()),
+                            span: Span::new(seg_start, end, line, seg_start_col),
                         });
                     }
                 }
@@ -707,6 +779,61 @@ mod tests {
             vec![
                 TokenKind::Describe,
                 TokenKind::StringLiteral("A test scenario".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenizes_parameter_in_free_text() {
+        let tokens = kinds("given a user with email <email>");
+        assert_eq!(
+            tokens,
+            vec![
+                TokenKind::Given,
+                TokenKind::FreeText("a user with email".into()),
+                TokenKind::Parameter("email".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenizes_multiple_parameters_in_free_text() {
+        let tokens = kinds("when the user enters <username> and <password>");
+        assert_eq!(
+            tokens,
+            vec![
+                TokenKind::When,
+                TokenKind::FreeText("the user enters".into()),
+                TokenKind::Parameter("username".into()),
+                TokenKind::FreeText("and".into()),
+                TokenKind::Parameter("password".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenizes_parameter_preserves_surrounding_text() {
+        let tokens = kinds("then the response status is <status_code> and body contains <message>");
+        assert_eq!(
+            tokens,
+            vec![
+                TokenKind::Then,
+                TokenKind::FreeText("the response status is".into()),
+                TokenKind::Parameter("status_code".into()),
+                TokenKind::FreeText("and body contains".into()),
+                TokenKind::Parameter("message".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn tokenizes_free_text_without_parameters_unchanged() {
+        let tokens = kinds("given a user with valid credentials");
+        assert_eq!(
+            tokens,
+            vec![
+                TokenKind::Given,
+                TokenKind::FreeText("a user with valid credentials".into()),
             ]
         );
     }

@@ -1,0 +1,17 @@
+graph FixtureTest {
+    fixture AdminUser {
+        role: "admin"
+        email: "admin@example.com"
+    }
+
+    fixture GuestUser {
+        role: "guest"
+    }
+
+    node CreateAdmin {
+        describe "Create an admin user"
+        given a user from fixture AdminUser
+        when the user submits the registration form
+        then the system creates a new account
+    }
+}

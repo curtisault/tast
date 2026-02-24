@@ -149,6 +149,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            fixtures: vec![],
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -257,6 +258,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            fixtures: vec![],
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -326,6 +328,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            fixtures: vec![],
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -356,6 +359,7 @@ mod tests {
                 description: None,
                 span: Span::default(),
             }],
+            fixtures: vec![],
             span: Span::default(),
         };
         let tg = build(&ir);

@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::emit::dot::emit_dot;
+use crate::emit::junit::emit_junit;
+use crate::emit::markdown::emit_markdown;
 use crate::emit::mermaid::emit_mermaid;
 use crate::emit::yaml::emit_yaml;
 use crate::graph::builder::build;
@@ -16,6 +18,7 @@ use crate::plan::filter::{filter_plan, parse_filter};
 pub struct PlanOptions {
     pub output: Option<PathBuf>,
     pub strategy: String,
+    pub format: String,
     pub filter: Option<String>,
     pub from: Option<String>,
     pub to: Option<String>,
@@ -39,6 +42,7 @@ impl Default for PlanOptions {
         Self {
             output: None,
             strategy: "topological".to_owned(),
+            format: "yaml".to_owned(),
             filter: None,
             from: None,
             to: None,
@@ -100,8 +104,17 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, Stri
                 plan = filter_plan(&plan, &predicate);
             }
 
-            let yaml = emit_yaml(&plan)?;
-            all_yaml.push_str(&yaml);
+            let output = match options.format.as_str() {
+                "yaml" => emit_yaml(&plan)?,
+                "markdown" | "md" => emit_markdown(&plan),
+                "junit" | "xml" => emit_junit(&plan),
+                other => {
+                    return Err(format!(
+                        "unknown format '{other}' (expected: yaml, markdown, junit)"
+                    ));
+                }
+            };
+            all_yaml.push_str(&output);
         }
     }
 
@@ -242,9 +255,23 @@ pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, String> {
                         lines.push(tag);
                     }
                 }
+                "fixtures" => {
+                    for fixture in &ir.fixtures {
+                        let fields: Vec<String> = fixture
+                            .fields
+                            .iter()
+                            .map(|(k, v)| format!("{k}: {v}"))
+                            .collect();
+                        if fields.is_empty() {
+                            lines.push(fixture.name.clone());
+                        } else {
+                            lines.push(format!("{} {{ {} }}", fixture.name, fields.join(", ")));
+                        }
+                    }
+                }
                 other => {
                     return Err(format!(
-                        "unknown list target '{other}' (expected: nodes, edges, tags)"
+                        "unknown list target '{other}' (expected: nodes, edges, tags, fixtures)"
                     ));
                 }
             }

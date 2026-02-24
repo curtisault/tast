@@ -47,6 +47,17 @@ pub struct StepEntry {
     pub text: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub data: Vec<(String, String)>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<ParameterEntry>,
+}
+
+/// A parameter binding in a plan step.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParameterEntry {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub source: String,
 }
 
 /// An input passed from an upstream node.
