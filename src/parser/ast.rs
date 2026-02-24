@@ -28,11 +28,23 @@ pub struct DataBlock {
     pub span: Span,
 }
 
+/// A fragment of step text — either plain text or a parameter placeholder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StepFragment {
+    /// Plain text segment.
+    Text(String),
+    /// A `<name>` parameter placeholder.
+    Parameter(String),
+}
+
 /// A BDD-style step (given/when/then/and/but) with free-text and optional inline data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Step {
     pub step_type: StepType,
     pub text: String,
+    /// Parsed fragments of the step text (text + parameter placeholders).
+    /// Empty when the step has no parameters.
+    pub fragments: Vec<StepFragment>,
     pub data: Option<DataBlock>,
     pub span: Span,
 }
@@ -149,12 +161,14 @@ mod tests {
                 Step {
                     step_type: StepType::Given,
                     text: "a registered user".into(),
+                    fragments: vec![],
                     data: None,
                     span: Span::default(),
                 },
                 Step {
                     step_type: StepType::When,
                     text: "the user submits credentials".into(),
+                    fragments: vec![],
                     data: None,
                     span: Span::default(),
                 },
@@ -172,6 +186,7 @@ mod tests {
         let step = Step {
             step_type: StepType::Given,
             text: "a user with email".into(),
+            fragments: vec![],
             data: None,
             span: Span::default(),
         };
@@ -184,6 +199,7 @@ mod tests {
         let step = Step {
             step_type: StepType::When,
             text: "the user clicks submit".into(),
+            fragments: vec![],
             data: None,
             span: Span::default(),
         };
@@ -195,6 +211,7 @@ mod tests {
         let step = Step {
             step_type: StepType::Then,
             text: "the order is created".into(),
+            fragments: vec![],
             data: None,
             span: Span::default(),
         };
@@ -206,6 +223,7 @@ mod tests {
         let step = Step {
             step_type: StepType::And,
             text: "the email is sent".into(),
+            fragments: vec![],
             data: None,
             span: Span::default(),
         };
@@ -218,6 +236,7 @@ mod tests {
         let step = Step {
             step_type: StepType::But,
             text: "no duplicate records exist".into(),
+            fragments: vec![],
             data: None,
             span: Span::default(),
         };
@@ -346,6 +365,7 @@ mod tests {
         let step = Step {
             step_type: StepType::Given,
             text: "a user with".into(),
+            fragments: vec![],
             data: Some(DataBlock {
                 fields: vec![
                     ("email".into(), Value::String("test@example.com".into())),
@@ -370,6 +390,7 @@ mod tests {
                     steps: vec![Step {
                         step_type: StepType::Given,
                         text: "a registered user".into(),
+                        fragments: vec![],
                         data: None,
                         span: Span::default(),
                     }],
@@ -403,5 +424,18 @@ mod tests {
         assert_eq!(graph.nodes.len(), 2);
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(graph.edges[0].passes, vec!["session_id"]);
+    }
+
+    #[test]
+    fn ast_step_fragment_text() {
+        let fragment = StepFragment::Text("a user with email".into());
+        assert_eq!(fragment, StepFragment::Text("a user with email".into()));
+    }
+
+    #[test]
+    fn ast_step_fragment_parameter() {
+        let fragment = StepFragment::Parameter("email".into());
+        assert_eq!(fragment, StepFragment::Parameter("email".into()));
+        assert_ne!(fragment, StepFragment::Text("email".into()));
     }
 }

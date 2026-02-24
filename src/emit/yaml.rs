@@ -44,16 +44,19 @@ mod tests {
                     step_type: "given".into(),
                     text: "a user".into(),
                     data: vec![],
+                    parameters: vec![],
                 }],
                 actions: vec![StepEntry {
                     step_type: "when".into(),
                     text: "the user acts".into(),
                     data: vec![],
+                    parameters: vec![],
                 }],
                 assertions: vec![StepEntry {
                     step_type: "then".into(),
                     text: "something happens".into(),
                     data: vec![],
+                    parameters: vec![],
                 }],
                 inputs: vec![],
                 outputs: vec![],
@@ -214,5 +217,44 @@ mod tests {
         let yaml = emit_yaml(&plan).expect("emit failed");
         let deserialized: TestPlan = serde_yaml::from_str(&yaml).expect("deserialization failed");
         assert_eq!(deserialized, plan);
+    }
+
+    #[test]
+    fn yaml_emits_parameters() {
+        use crate::plan::types::ParameterEntry;
+
+        let plan = TestPlan {
+            plan: PlanMetadata {
+                name: "ParamTest".into(),
+                traversal: "topological".into(),
+                nodes_total: 1,
+                edges_total: 0,
+            },
+            steps: vec![PlanStep {
+                order: 1,
+                node: "A".into(),
+                description: None,
+                tags: vec![],
+                depends_on: vec![],
+                preconditions: vec![StepEntry {
+                    step_type: "given".into(),
+                    text: "a user with email <email>".into(),
+                    data: vec![],
+                    parameters: vec![ParameterEntry {
+                        name: "email".into(),
+                        value: Some("test@example.com".into()),
+                        source: "edge:".into(),
+                    }],
+                }],
+                actions: vec![],
+                assertions: vec![],
+                inputs: vec![],
+                outputs: vec![],
+            }],
+        };
+        let yaml = emit_yaml(&plan).expect("emit failed");
+        assert!(yaml.contains("parameters:"));
+        assert!(yaml.contains("email"));
+        assert!(yaml.contains("test@example.com"));
     }
 }

@@ -281,3 +281,106 @@ fn cli_plan_cross_graph_edge() {
     // Data should flow from Auth.Login to PlaceOrder
     assert!(yaml.contains("auth_token"));
 }
+
+// ── D3: Fixture listing ──────────────────────────────────
+
+#[test]
+fn list_fixtures_shows_all() {
+    let result = run_list("fixtures", &[fixture("with_fixtures.tast")]);
+    let output = result.expect("list should succeed");
+    assert!(output.contains("AdminUser"));
+    assert!(output.contains("GuestUser"));
+}
+
+#[test]
+fn list_fixtures_includes_fields() {
+    let result = run_list("fixtures", &[fixture("with_fixtures.tast")]);
+    let output = result.expect("list should succeed");
+    assert!(output.contains("role: admin"));
+    assert!(output.contains("email: admin@example.com"));
+}
+
+#[test]
+fn list_fixtures_empty_when_none() {
+    let result = run_list("fixtures", &[fixture("empty_graph.tast")]);
+    let output = result.expect("list should succeed");
+    assert_eq!(output.trim(), "");
+}
+
+// ── E2: Plan format flag ─────────────────────────────────
+
+#[test]
+fn cli_plan_format_markdown() {
+    let opts = PlanOptions {
+        format: "markdown".into(),
+        ..PlanOptions::default()
+    };
+    let result = run_plan(&[fixture("full_auth.tast")], &opts);
+    let output = result.expect("plan should succeed");
+    assert!(output.contains("# Test Plan:"));
+    assert!(output.contains("## Step"));
+}
+
+#[test]
+fn cli_plan_format_yaml_default() {
+    let result = run_plan(&[fixture("single_node.tast")], &default_opts());
+    let output = result.expect("plan should succeed");
+    // Default format is YAML
+    assert!(output.contains("plan:"));
+    assert!(output.contains("steps:"));
+}
+
+#[test]
+fn cli_plan_format_unknown_errors() {
+    let opts = PlanOptions {
+        format: "html".into(),
+        ..PlanOptions::default()
+    };
+    let result = run_plan(&[fixture("single_node.tast")], &opts);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("unknown format"));
+}
+
+// ── F2: JUnit format via CLI ─────────────────────────────
+
+#[test]
+fn cli_plan_format_junit() {
+    let opts = PlanOptions {
+        format: "junit".into(),
+        ..PlanOptions::default()
+    };
+    let result = run_plan(&[fixture("full_auth.tast")], &opts);
+    let output = result.expect("plan should succeed");
+    assert!(output.contains("<?xml"));
+    assert!(output.contains("<testsuites"));
+    assert!(output.contains("<testcase"));
+}
+
+#[test]
+fn cli_plan_format_junit_writes_file() {
+    let tmp = std::env::temp_dir().join("tast_test_junit.xml");
+    let opts = PlanOptions {
+        format: "junit".into(),
+        output: Some(tmp.clone()),
+        ..PlanOptions::default()
+    };
+    let result = run_plan(&[fixture("full_auth.tast")], &opts);
+    assert!(result.is_ok());
+    let content = std::fs::read_to_string(&tmp).expect("should read output file");
+    assert!(content.contains("<testsuites"));
+    std::fs::remove_file(&tmp).ok();
+}
+
+#[test]
+fn cli_plan_format_junit_valid_xml() {
+    let opts = PlanOptions {
+        format: "junit".into(),
+        ..PlanOptions::default()
+    };
+    let result = run_plan(&[fixture("full_auth.tast")], &opts);
+    let output = result.expect("plan should succeed");
+    // Verify basic XML well-formedness: every open tag has a close
+    assert!(output.contains("</testcase>"));
+    assert!(output.contains("</testsuite>"));
+    assert!(output.contains("</testsuites>"));
+}

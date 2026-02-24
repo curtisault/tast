@@ -285,6 +285,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            fixtures: vec![],
             span: Span::default(),
         };
         let tg = build(&ir);

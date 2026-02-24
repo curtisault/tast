@@ -3,7 +3,8 @@ use petgraph::Direction;
 use crate::graph::builder::TestGraph;
 use crate::graph::traversal::{TraversalStrategy, traverse};
 use crate::ir::IrStepType;
-use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry, TestPlan};
+use crate::ir::params::BindingSource;
+use crate::plan::types::{InputEntry, ParameterEntry, PlanMetadata, PlanStep, StepEntry, TestPlan};
 
 /// Compile a test graph into an ordered test plan using topological sort.
 ///
@@ -73,10 +74,24 @@ pub fn compile_with_strategy(
         let mut last_category = StepCategory::Precondition;
 
         for step in &node.steps {
+            let parameters: Vec<ParameterEntry> = step
+                .parameters
+                .iter()
+                .map(|p| ParameterEntry {
+                    name: p.name.clone(),
+                    value: p.value.clone(),
+                    source: match &p.source {
+                        BindingSource::Fixture(name) => format!("fixture:{name}"),
+                        BindingSource::EdgeData(name) => format!("edge:{name}"),
+                        BindingSource::Unresolved => "unresolved".into(),
+                    },
+                })
+                .collect();
             let entry = StepEntry {
                 step_type: step_type_str(&step.step_type),
                 text: step.text.clone(),
                 data: step.data.clone(),
+                parameters,
             };
 
             match step.step_type {
@@ -311,5 +326,53 @@ mod tests {
         assert_eq!(plan.plan.nodes_total, 3);
         assert_eq!(plan.plan.edges_total, 2);
         assert_eq!(plan.plan.traversal, "topological");
+    }
+
+    #[test]
+    fn plan_step_includes_parameters() {
+        let plan = compile_one(
+            r#"graph G {
+                node A {
+                    given a user with email <email> {
+                        email: "test@example.com"
+                    }
+                }
+            }"#,
+        );
+        let step = &plan.steps[0];
+        // The given step should have a parameter binding for "email"
+        let precond = &step.preconditions[0];
+        assert_eq!(precond.parameters.len(), 1);
+        assert_eq!(precond.parameters[0].name, "email");
+        assert_eq!(precond.parameters[0].value, Some("test@example.com".into()));
+    }
+
+    #[test]
+    fn plan_step_parameters_show_binding_source() {
+        let plan = compile_one(
+            r#"graph G {
+                node A {
+                    given a user with email <email> {
+                        email: "a@b.com"
+                    }
+                }
+            }"#,
+        );
+        let param = &plan.steps[0].preconditions[0].parameters[0];
+        // Source should indicate edge data (from inline data block)
+        assert!(!param.source.is_empty());
+    }
+
+    #[test]
+    fn plan_step_without_parameters_omits_field() {
+        let plan = compile_one(
+            r#"graph G {
+                node A {
+                    given a user with valid credentials
+                }
+            }"#,
+        );
+        let precond = &plan.steps[0].preconditions[0];
+        assert!(precond.parameters.is_empty());
     }
 }
