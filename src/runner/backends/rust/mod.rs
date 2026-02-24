@@ -1,8 +1,11 @@
 pub mod mapping;
+pub mod output;
 
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 use crate::plan::types::{PlanStep, StepEntry, TestPlan};
 use crate::runner::backend::{BackendError, BackendErrorKind, GeneratedHarness, TestBackend};
@@ -98,6 +101,91 @@ impl RustBackend {
         writeln!(out, "}}").unwrap();
         out
     }
+
+    /// Build the `cargo test` command for execution.
+    #[allow(dead_code)] // Used by runner orchestrator (Part E)
+    pub(crate) fn build_command(&self, working_dir: &Path, test_name: Option<&str>) -> Command {
+        let mut cmd = Command::new(&self.cargo_command);
+        cmd.arg("test");
+        cmd.current_dir(working_dir);
+
+        // Run specific test function if requested
+        if let Some(name) = test_name {
+            cmd.arg(name);
+        }
+
+        // Separator for test runner args
+        cmd.arg("--");
+        cmd.arg("--test-threads=1");
+        cmd.arg("--nocapture");
+
+        // Additional user-configured args
+        for arg in &self.test_args {
+            cmd.arg(arg);
+        }
+
+        cmd
+    }
+
+    /// Run `cargo test` and capture the output.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError`] if the process cannot be spawned.
+    /// A non-zero exit code is **not** an error — it indicates test failures,
+    /// which are captured in the returned [`ProcessOutput`].
+    #[allow(dead_code)] // Used by runner orchestrator (Part E)
+    pub(crate) fn run_cargo_test(
+        &self,
+        working_dir: &Path,
+        test_name: Option<&str>,
+        timeout: Duration,
+    ) -> Result<ProcessOutput, BackendError> {
+        let mut cmd = self.build_command(working_dir, test_name);
+
+        let start = Instant::now();
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| BackendError {
+                kind: BackendErrorKind::ExecutionFailed,
+                message: format!("failed to spawn {}", self.cargo_command),
+                detail: Some(e.to_string()),
+            })?;
+
+        let result = child.wait_with_output().map_err(|e| BackendError {
+            kind: BackendErrorKind::ExecutionFailed,
+            message: "failed to wait for cargo test".into(),
+            detail: Some(e.to_string()),
+        })?;
+
+        let duration = start.elapsed();
+        let timed_out = duration >= timeout;
+
+        Ok(ProcessOutput {
+            exit_code: result.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&result.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
+            duration,
+            timed_out,
+        })
+    }
+}
+
+/// Raw output from a `cargo test` invocation.
+#[derive(Debug, Clone)]
+pub struct ProcessOutput {
+    /// Process exit code (0 = all tests passed).
+    pub exit_code: i32,
+    /// Captured stdout.
+    pub stdout: String,
+    /// Captured stderr.
+    pub stderr: String,
+    /// Wall-clock duration of the process.
+    pub duration: Duration,
+    /// Whether the process exceeded the timeout.
+    pub timed_out: bool,
 }
 
 impl Default for RustBackend {
@@ -563,7 +651,7 @@ mod tests {
 
     #[test]
     fn generated_harness_writes_to_disk() {
-        let backend = RustBackend::new();
+        let _backend = RustBackend::new();
         let plan = make_plan("DiskTest", vec![make_plan_step(1, "WriteStep")]);
 
         let dir = std::env::temp_dir().join("tast_test_harness");
@@ -584,5 +672,54 @@ mod tests {
         assert!(!harness.entry_point.exists());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_command_includes_cargo_test() {
+        let backend = RustBackend::new();
+        let dir = std::env::temp_dir();
+        let cmd = backend.build_command(&dir, None);
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(cmd.get_program().to_string_lossy(), "cargo");
+        assert!(args.contains(&"test".to_string()));
+        assert!(args.contains(&"--test-threads=1".to_string()));
+        assert!(args.contains(&"--nocapture".to_string()));
+    }
+
+    #[test]
+    fn build_command_with_test_name_filter() {
+        let backend = RustBackend::new();
+        let dir = std::env::temp_dir();
+        let cmd = backend.build_command(&dir, Some("my_test"));
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert!(args.contains(&"my_test".to_string()));
+    }
+
+    #[test]
+    fn build_command_includes_extra_args() {
+        let mut backend = RustBackend::new();
+        backend.test_args.push("--verbose".into());
+        let dir = std::env::temp_dir();
+        let cmd = backend.build_command(&dir, None);
+        let args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert!(args.contains(&"--verbose".to_string()));
+    }
+
+    #[test]
+    fn run_cargo_test_spawn_failure() {
+        let mut backend = RustBackend::new();
+        backend.cargo_command = "nonexistent_cargo_binary_xyz".into();
+        let dir = std::env::temp_dir();
+        let result = backend.run_cargo_test(&dir, None, Duration::from_secs(5));
+        assert!(result.is_err());
     }
 }
