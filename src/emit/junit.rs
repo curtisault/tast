@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use crate::emit::util::capitalize;
 use crate::plan::types::TestPlan;
 
 /// Emit a test plan as JUnit XML.
@@ -61,14 +62,6 @@ fn format_step_line(entry: &crate::plan::types::StepEntry) -> String {
     format!("{label} {}", entry.text)
 }
 
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
-    }
-}
-
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -80,112 +73,7 @@ fn xml_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry};
-
-    fn empty_plan() -> TestPlan {
-        TestPlan {
-            plan: PlanMetadata {
-                name: "Empty".into(),
-                traversal: "topological".into(),
-                nodes_total: 0,
-                edges_total: 0,
-            },
-            steps: vec![],
-        }
-    }
-
-    fn single_step_plan() -> TestPlan {
-        TestPlan {
-            plan: PlanMetadata {
-                name: "Auth".into(),
-                traversal: "topological".into(),
-                nodes_total: 1,
-                edges_total: 0,
-            },
-            steps: vec![PlanStep {
-                order: 1,
-                node: "Login".into(),
-                description: Some("User logs in".into()),
-                tags: vec![],
-                depends_on: vec![],
-                preconditions: vec![StepEntry {
-                    step_type: "given".into(),
-                    text: "a registered user".into(),
-                    data: vec![],
-                    parameters: vec![],
-                }],
-                actions: vec![StepEntry {
-                    step_type: "when".into(),
-                    text: "the user submits credentials".into(),
-                    data: vec![],
-                    parameters: vec![],
-                }],
-                assertions: vec![StepEntry {
-                    step_type: "then".into(),
-                    text: "the system returns a token".into(),
-                    data: vec![],
-                    parameters: vec![],
-                }],
-                inputs: vec![],
-                outputs: vec![],
-            }],
-        }
-    }
-
-    fn multi_step_plan() -> TestPlan {
-        TestPlan {
-            plan: PlanMetadata {
-                name: "AuthFlow".into(),
-                traversal: "topological".into(),
-                nodes_total: 2,
-                edges_total: 1,
-            },
-            steps: vec![
-                PlanStep {
-                    order: 1,
-                    node: "Register".into(),
-                    description: None,
-                    tags: vec![],
-                    depends_on: vec![],
-                    preconditions: vec![StepEntry {
-                        step_type: "given".into(),
-                        text: "a new user".into(),
-                        data: vec![],
-                        parameters: vec![],
-                    }],
-                    actions: vec![],
-                    assertions: vec![StepEntry {
-                        step_type: "then".into(),
-                        text: "the account is created".into(),
-                        data: vec![],
-                        parameters: vec![],
-                    }],
-                    inputs: vec![],
-                    outputs: vec!["user_id".into()],
-                },
-                PlanStep {
-                    order: 2,
-                    node: "Login".into(),
-                    description: None,
-                    tags: vec![],
-                    depends_on: vec!["Register".into()],
-                    preconditions: vec![],
-                    actions: vec![StepEntry {
-                        step_type: "when".into(),
-                        text: "the user logs in".into(),
-                        data: vec![],
-                        parameters: vec![],
-                    }],
-                    assertions: vec![],
-                    inputs: vec![InputEntry {
-                        field: "user_id".into(),
-                        from: "Register".into(),
-                    }],
-                    outputs: vec![],
-                },
-            ],
-        }
-    }
+    use crate::emit::test_plans::{empty_plan, multi_step_plan, single_step_plan};
 
     #[test]
     fn junit_empty_plan() {
