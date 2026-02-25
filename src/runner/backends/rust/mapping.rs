@@ -1,3 +1,5 @@
+pub use crate::runner::backends::http_pattern::{HttpPattern, detect_http_pattern};
+
 /// Strategy for mapping step text to executable code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MappingStrategy {
@@ -15,15 +17,6 @@ pub struct StepMapping {
     pub imports: Vec<String>,
 }
 
-/// An HTTP pattern detected in step text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpPattern {
-    pub method: String,
-    pub path: String,
-    pub body: Option<String>,
-    pub expected_status: Option<u16>,
-}
-
 /// Analyze a step and determine the best mapping strategy.
 ///
 /// If the step text matches an HTTP pattern, generates HTTP client code.
@@ -34,51 +27,6 @@ pub fn resolve_mapping(step_text: &str, step_type: &str) -> StepMapping {
     }
 
     generate_skeleton_mapping(step_type)
-}
-
-/// Detect HTTP patterns in step text.
-///
-/// Matches patterns like:
-/// - `"GET /api/users"` or `"POST /api/users"`
-/// - `"the API returns 200"` or `"the response status is 404"`
-pub fn detect_http_pattern(text: &str) -> Option<HttpPattern> {
-    let upper = text.to_uppercase();
-    let words: Vec<&str> = text.split_whitespace().collect();
-
-    // Match "GET /path", "POST /path", etc.
-    if words.len() >= 2 {
-        let method = words[0].to_uppercase();
-        if matches!(method.as_str(), "GET" | "POST" | "PUT" | "DELETE" | "PATCH")
-            && words[1].starts_with('/')
-        {
-            return Some(HttpPattern {
-                method,
-                path: words[1].to_owned(),
-                body: None,
-                expected_status: None,
-            });
-        }
-    }
-
-    // Match "the API returns <status>" or "the response status is <status>"
-    if (upper.contains("RETURNS") || upper.contains("STATUS"))
-        && let Some(status) = extract_status_code(text)
-    {
-        return Some(HttpPattern {
-            method: String::new(),
-            path: String::new(),
-            body: None,
-            expected_status: Some(status),
-        });
-    }
-
-    None
-}
-
-fn extract_status_code(text: &str) -> Option<u16> {
-    text.split_whitespace()
-        .filter_map(|w| w.parse::<u16>().ok())
-        .find(|&n| (100..600).contains(&n))
 }
 
 fn generate_skeleton_mapping(step_type: &str) -> StepMapping {
@@ -187,7 +135,6 @@ mod tests {
 
     #[test]
     fn mapping_generates_valid_rust_code() {
-        // Skeleton mapping should produce a valid Rust comment
         let mapping = resolve_mapping("the user submits the form", "when");
         assert!(mapping.code.starts_with("//"));
     }
@@ -212,7 +159,6 @@ mod tests {
 
     #[test]
     fn mapping_detect_ignores_non_status_numbers() {
-        // Numbers outside 100-599 range should not be treated as HTTP status
         assert!(detect_http_pattern("there are 50 users").is_none());
     }
 }
