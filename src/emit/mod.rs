@@ -2,6 +2,7 @@ pub mod dot;
 pub mod junit;
 pub mod markdown;
 pub mod mermaid;
+pub mod run_result;
 pub(crate) mod util;
 pub mod yaml;
 
