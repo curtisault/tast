@@ -140,3 +140,60 @@ fn tast_plan_full_pipeline_preserves_data_flow() {
         "Emit should receive from Compile"
     );
 }
+
+// ── Runner Pipeline self-validation ─────────────────────────
+
+#[test]
+fn self_validation_runner_pipeline_parses() {
+    let result = run_validate(&[tast_file("runner_pipeline.tast")]);
+    let output = result.expect("runner_pipeline.tast should validate");
+    assert!(output.contains("RunnerPipeline is valid"));
+}
+
+#[test]
+fn self_validation_runner_pipeline_plans() {
+    let yaml = run_plan(&[tast_file("runner_pipeline.tast")], &default_opts())
+        .expect("plan should succeed");
+    assert!(yaml.contains("name: RunnerPipeline"));
+    assert!(yaml.contains("traversal: topological"));
+}
+
+#[test]
+fn self_validation_runner_pipeline_validates() {
+    let yaml = run_plan(&[tast_file("runner_pipeline.tast")], &default_opts())
+        .expect("plan should succeed");
+    let deserialized: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).expect("output should be valid YAML");
+    assert!(deserialized.get("plan").is_some());
+    assert!(deserialized.get("steps").is_some());
+}
+
+#[test]
+fn self_validation_plan_output_matches_expected() {
+    let yaml = run_plan(&[tast_file("runner_pipeline.tast")], &default_opts())
+        .expect("plan should succeed");
+    // Verify data flows through the pipeline
+    assert!(yaml.contains("ast"), "should pass ast");
+    assert!(yaml.contains("plan"), "should reference plan");
+    assert!(yaml.contains("step_results"), "should pass step_results");
+}
+
+#[test]
+fn self_validation_runner_pipeline_node_count() {
+    let result = run_validate(&[tast_file("runner_pipeline.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("4 nodes"),
+        "RunnerPipeline should have 4 nodes"
+    );
+}
+
+#[test]
+fn self_validation_runner_pipeline_edge_count() {
+    let result = run_validate(&[tast_file("runner_pipeline.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("3 edges"),
+        "RunnerPipeline should have 3 edges"
+    );
+}
