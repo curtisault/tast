@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::plan::types::{PlanStep, TestPlan};
 use crate::runner::backend::TestBackend;
-use crate::runner::context::RunContext;
+use crate::runner::context::{self, RunContext};
 use crate::runner::registry::BackendRegistry;
 use crate::runner::result::{StepError, StepErrorKind, StepResult, StepStatus};
 
@@ -203,6 +203,42 @@ impl TestRunner {
     /// Check if any of a step's dependencies have failed.
     fn has_failed_dependency(&self, step: &PlanStep, failed_nodes: &HashSet<String>) -> bool {
         step.depends_on.iter().any(|dep| failed_nodes.contains(dep))
+    }
+
+    /// Resolve inputs for a step from the run context.
+    ///
+    /// Converts the step's `InputEntry` list into `(field, source_node)` pairs
+    /// and looks them up in the context. Returns the resolved values or a
+    /// `StepError` if any inputs are missing.
+    #[allow(dead_code)] // Wired in when execute_step does input resolution
+    pub(crate) fn inject_inputs(
+        &self,
+        step: &PlanStep,
+        context: &RunContext,
+    ) -> Result<HashMap<String, String>, StepError> {
+        if step.inputs.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let input_pairs: Vec<(String, String)> = step
+            .inputs
+            .iter()
+            .map(|i| (i.field.clone(), i.from.clone()))
+            .collect();
+
+        context
+            .resolve_inputs(&input_pairs)
+            .map_err(|errors| StepError {
+                kind: StepErrorKind::MissingInput,
+                message: format!("{} input(s) could not be resolved", errors.len()),
+                detail: Some(errors.join("; ")),
+            })
+    }
+
+    /// Extract output data from a step result's stdout using TAST_OUTPUT markers.
+    #[allow(dead_code)] // Wired in when execute_step does output capture
+    pub(crate) fn capture_outputs(result: &StepResult) -> HashMap<String, String> {
+        context::extract_step_outputs(&result.stdout)
     }
 
     /// Compute execution levels from the plan's dependency graph.
@@ -991,5 +1027,110 @@ mod tests {
         // Level ordering: A first, then B
         assert_eq!(results[0].node, "A");
         assert_eq!(results[1].node, "B");
+    }
+
+    // -- F2: Input injection tests --
+
+    fn make_step_with_inputs(
+        name: &str,
+        depends_on: Vec<&str>,
+        inputs: Vec<(&str, &str)>,
+    ) -> PlanStep {
+        use crate::plan::types::InputEntry;
+        PlanStep {
+            order: 1,
+            node: name.into(),
+            description: None,
+            tags: vec![],
+            depends_on: depends_on.into_iter().map(String::from).collect(),
+            preconditions: vec![],
+            actions: vec![],
+            assertions: vec![],
+            inputs: inputs
+                .into_iter()
+                .map(|(field, from)| InputEntry {
+                    field: field.into(),
+                    from: from.into(),
+                })
+                .collect(),
+            outputs: vec![],
+        }
+    }
+
+    #[test]
+    fn inject_inputs_no_inputs_succeeds() {
+        let config = RunConfig::default();
+        let runner = TestRunner::new(config);
+        let step = make_step("A", vec![]);
+        let ctx = RunContext::new("/tmp");
+        let result = runner.inject_inputs(&step, &ctx).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn inject_inputs_resolves_from_context() {
+        let config = RunConfig::default();
+        let runner = TestRunner::new(config);
+        let step = make_step_with_inputs("B", vec!["A"], vec![("user_id", "A")]);
+        let mut ctx = RunContext::new("/tmp");
+        let mut outputs = HashMap::new();
+        outputs.insert("user_id".into(), "abc-123".into());
+        ctx.record_outputs("A", outputs);
+
+        let resolved = runner.inject_inputs(&step, &ctx).unwrap();
+        assert_eq!(resolved["user_id"], "abc-123");
+    }
+
+    #[test]
+    fn inject_inputs_missing_source_errors() {
+        let config = RunConfig::default();
+        let runner = TestRunner::new(config);
+        let step = make_step_with_inputs("B", vec!["A"], vec![("user_id", "A")]);
+        let ctx = RunContext::new("/tmp");
+
+        let err = runner.inject_inputs(&step, &ctx).unwrap_err();
+        assert_eq!(err.kind, StepErrorKind::MissingInput);
+        assert!(err.detail.is_some());
+    }
+
+    #[test]
+    fn inject_inputs_multiple_sources() {
+        let config = RunConfig::default();
+        let runner = TestRunner::new(config);
+        let step =
+            make_step_with_inputs("C", vec!["A", "B"], vec![("user_id", "A"), ("token", "B")]);
+        let mut ctx = RunContext::new("/tmp");
+        let mut out_a = HashMap::new();
+        out_a.insert("user_id".into(), "abc-123".into());
+        ctx.record_outputs("A", out_a);
+        let mut out_b = HashMap::new();
+        out_b.insert("token".into(), "tok-xyz".into());
+        ctx.record_outputs("B", out_b);
+
+        let resolved = runner.inject_inputs(&step, &ctx).unwrap();
+        assert_eq!(resolved["user_id"], "abc-123");
+        assert_eq!(resolved["token"], "tok-xyz");
+    }
+
+    #[test]
+    fn inject_inputs_env_var_naming_convention() {
+        use crate::runner::context::input_env_var_name;
+        assert_eq!(input_env_var_name("user_id"), "TAST_INPUT_USER_ID");
+        assert_eq!(input_env_var_name("auth_token"), "TAST_INPUT_AUTH_TOKEN");
+    }
+
+    #[test]
+    fn capture_outputs_from_stdout() {
+        let mut result = StepResult::passed("A", Duration::from_millis(10));
+        result.stdout = "some output\nTAST_OUTPUT:{\"user_id\":\"abc-123\"}\n".into();
+        let outputs = TestRunner::capture_outputs(&result);
+        assert_eq!(outputs["user_id"], "abc-123");
+    }
+
+    #[test]
+    fn capture_outputs_empty_stdout() {
+        let result = StepResult::passed("A", Duration::from_millis(10));
+        let outputs = TestRunner::capture_outputs(&result);
+        assert!(outputs.is_empty());
     }
 }

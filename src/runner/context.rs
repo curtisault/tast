@@ -85,6 +85,43 @@ impl RunContext {
     }
 }
 
+/// The TAST output marker prefix used in stdout to pass data between steps.
+const TAST_OUTPUT_MARKER: &str = "TAST_OUTPUT:";
+
+/// Scan step stdout for `TAST_OUTPUT:{json}` markers and extract key-value data.
+///
+/// Each line matching the marker is parsed as a JSON object. Fields from
+/// multiple markers are merged (later values overwrite earlier ones).
+/// Lines that don't match or contain invalid JSON are silently skipped.
+pub fn extract_step_outputs(stdout: &str) -> HashMap<String, String> {
+    let mut outputs = HashMap::new();
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some(json_str) = trimmed.strip_prefix(TAST_OUTPUT_MARKER)
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str)
+            && let Some(obj) = parsed.as_object()
+        {
+            for (key, value) in obj {
+                let val_str = match value {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                outputs.insert(key.clone(), val_str);
+            }
+        }
+    }
+
+    outputs
+}
+
+/// Convert a field name to the TAST input environment variable name.
+///
+/// Convention: `user_id` → `TAST_INPUT_USER_ID`
+pub fn input_env_var_name(field: &str) -> String {
+    format!("TAST_INPUT_{}", field.to_uppercase())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +238,89 @@ mod tests {
         let ctx = RunContext::new("/tmp");
         let resolved = ctx.resolve_inputs(&[]).unwrap();
         assert!(resolved.is_empty());
+    }
+
+    // -- F1: Output extraction tests --
+
+    #[test]
+    fn extract_outputs_single_field() {
+        let stdout = "TAST_OUTPUT:{\"user_id\":\"abc-123\"}\n";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs["user_id"], "abc-123");
+    }
+
+    #[test]
+    fn extract_outputs_multiple_fields() {
+        let stdout = "TAST_OUTPUT:{\"user_id\":\"abc-123\",\"email\":\"test@example.com\"}\n";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs["user_id"], "abc-123");
+        assert_eq!(outputs["email"], "test@example.com");
+    }
+
+    #[test]
+    fn extract_outputs_no_marker_returns_empty() {
+        let stdout = "some regular output\nanother line\n";
+        let outputs = extract_step_outputs(stdout);
+        assert!(outputs.is_empty());
+    }
+
+    #[test]
+    fn extract_outputs_multiple_markers_merges() {
+        let stdout = "\
+TAST_OUTPUT:{\"user_id\":\"abc-123\"}
+TAST_OUTPUT:{\"email\":\"test@example.com\"}
+";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs["user_id"], "abc-123");
+        assert_eq!(outputs["email"], "test@example.com");
+    }
+
+    #[test]
+    fn extract_outputs_ignores_non_marker_lines() {
+        let stdout = "\
+some output before
+TAST_OUTPUT:{\"token\":\"xyz\"}
+more output after
+";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs["token"], "xyz");
+    }
+
+    #[test]
+    fn extract_outputs_handles_json_with_special_chars() {
+        let stdout = "TAST_OUTPUT:{\"url\":\"https://example.com/api?q=hello&lang=en\"}\n";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs["url"], "https://example.com/api?q=hello&lang=en");
+    }
+
+    #[test]
+    fn extract_outputs_invalid_json_skipped() {
+        let stdout = "\
+TAST_OUTPUT:not-valid-json
+TAST_OUTPUT:{\"valid\":\"yes\"}
+";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs["valid"], "yes");
+    }
+
+    #[test]
+    fn extract_outputs_marker_at_end_of_stdout() {
+        let stdout = "setup complete\nTAST_OUTPUT:{\"id\":\"42\"}";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs["id"], "42");
+    }
+
+    // -- F1: Env var naming tests --
+
+    #[test]
+    fn input_env_var_name_convention() {
+        assert_eq!(input_env_var_name("user_id"), "TAST_INPUT_USER_ID");
+        assert_eq!(input_env_var_name("email"), "TAST_INPUT_EMAIL");
+        assert_eq!(input_env_var_name("auth_token"), "TAST_INPUT_AUTH_TOKEN");
     }
 }
