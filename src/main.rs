@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use tast::cli::commands::{self, PlanOptions};
+use tast::cli::commands::{self, PlanOptions, RunOptions};
 
 #[derive(Parser)]
 #[command(name = "tast", about = "TAST — Test Abstract Syntax Tree", version)]
@@ -56,6 +56,48 @@ enum Commands {
 
         /// Input .tast files
         files: Vec<PathBuf>,
+    },
+
+    /// Execute test plans against a project
+    Run {
+        /// .tast files to run
+        files: Vec<PathBuf>,
+
+        /// Test backend to use (default: auto-detect)
+        #[arg(long, short = 'b')]
+        backend: Option<String>,
+
+        /// Output format for results (yaml, json, junit)
+        #[arg(long, short = 'f', default_value = "yaml")]
+        format: String,
+
+        /// Write results to a file instead of stdout
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+
+        /// Tag filter expression
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Maximum parallel steps
+        #[arg(long, short = 'p', default_value = "1")]
+        parallel: usize,
+
+        /// Per-step timeout in seconds
+        #[arg(long, short = 't', default_value = "60")]
+        timeout: u64,
+
+        /// Stop on first failure
+        #[arg(long)]
+        fail_fast: bool,
+
+        /// Keep generated harness files after run (for debugging)
+        #[arg(long)]
+        keep_harness: bool,
+
+        /// Graph traversal strategy
+        #[arg(long, short = 's', default_value = "topological")]
+        strategy: String,
     },
 
     /// Visualize the test graph (DOT/Mermaid output)
@@ -130,6 +172,46 @@ fn main() {
             }
             match commands::run_list(&what, &files) {
                 Ok(result) => print!("{result}"),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some(Commands::Run {
+            files,
+            backend,
+            format,
+            output,
+            filter,
+            parallel,
+            timeout,
+            fail_fast,
+            keep_harness,
+            strategy,
+        }) => {
+            if files.is_empty() {
+                eprintln!("error: no input files provided");
+                std::process::exit(1);
+            }
+            let options = RunOptions {
+                files,
+                backend,
+                format,
+                output,
+                filter,
+                parallel,
+                timeout,
+                fail_fast,
+                keep_harness,
+                strategy,
+            };
+            match commands::run_run(options) {
+                Ok(success) => {
+                    if !success {
+                        std::process::exit(1);
+                    }
+                }
                 Err(e) => {
                     eprintln!("error: {e}");
                     std::process::exit(1);
