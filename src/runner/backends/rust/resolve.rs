@@ -233,6 +233,7 @@ mod tests {
     #[test]
     fn plan_all_bound() {
         use crate::plan::types::{PlanStep, StepEntry};
+        use std::collections::HashMap;
         let bindings = vec![
             make_binding("given_a_user", "given"),
             make_binding("when_login", "when"),
@@ -264,6 +265,7 @@ mod tests {
             }],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }];
         let resolutions = resolve_plan_bindings(&steps, &bindings);
         assert_eq!(resolutions.len(), 1);
@@ -274,6 +276,7 @@ mod tests {
     #[test]
     fn plan_mixed_bound_unbound() {
         use crate::plan::types::{PlanStep, StepEntry};
+        use std::collections::HashMap;
         let bindings = vec![make_binding("given_a_user", "given")];
         let steps = vec![PlanStep {
             order: 1,
@@ -296,6 +299,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }];
         let resolutions = resolve_plan_bindings(&steps, &bindings);
         assert!(resolutions[0][0].1.is_bound());
@@ -305,6 +309,7 @@ mod tests {
     #[test]
     fn plan_empty_bindings() {
         use crate::plan::types::{PlanStep, StepEntry};
+        use std::collections::HashMap;
         let steps = vec![PlanStep {
             order: 1,
             node: "Test".into(),
@@ -321,6 +326,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }];
         let resolutions = resolve_plan_bindings(&steps, &[]);
         assert!(!resolutions[0][0].1.is_bound());

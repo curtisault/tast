@@ -240,6 +240,7 @@ mod tests {
     // Helper functions
 
     fn make_basic_step() -> PlanStep {
+        use std::collections::HashMap;
         PlanStep {
             order: 1,
             node: "TestStep".to_string(),
@@ -251,6 +252,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 }

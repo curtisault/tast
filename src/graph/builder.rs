@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::ir::{IrEdge, IrGraph, IrNode};
@@ -7,6 +9,7 @@ pub struct TestGraph {
     pub name: String,
     pub graph: DiGraph<IrNode, IrEdge>,
     pub node_indices: Vec<NodeIndex>,
+    pub config: HashMap<String, String>,
 }
 
 /// Build a petgraph `DiGraph` from a validated IR graph.
@@ -26,6 +29,7 @@ pub fn build(ir: &IrGraph) -> TestGraph {
         name: ir.name.clone(),
         graph,
         node_indices,
+        config: ir.config.clone(),
     }
 }
 

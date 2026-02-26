@@ -374,6 +374,7 @@ mod tests {
                 nodes_total: 0,
                 edges_total: 0,
             },
+            config: std::collections::HashMap::new(),
             steps: vec![],
         };
         let context = RunContext::new("/tmp");
@@ -582,6 +583,7 @@ mod tests {
 
     fn make_test_plan() -> TestPlan {
         use crate::plan::types::PlanMetadata;
+        use std::collections::HashMap;
         TestPlan {
             plan: PlanMetadata {
                 name: "Test".to_string(),
@@ -589,6 +591,7 @@ mod tests {
                 nodes_total: 1,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps: vec![PlanStep {
                 order: 1,
                 node: "TestStep".to_string(),
@@ -600,6 +603,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         }
     }

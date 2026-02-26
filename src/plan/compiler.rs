@@ -126,6 +126,7 @@ pub fn compile_with_strategy(
             assertions,
             inputs,
             outputs,
+            config: node.config.clone(),
         });
     }
 
@@ -136,6 +137,7 @@ pub fn compile_with_strategy(
             nodes_total: tg.graph.node_count(),
             edges_total: tg.graph.edge_count(),
         },
+        config: tg.config.clone(),
         steps,
     })
 }
@@ -374,5 +376,50 @@ mod tests {
         );
         let precond = &plan.steps[0].preconditions[0];
         assert!(precond.parameters.is_empty());
+    }
+
+    // --- Config threading tests ---
+
+    #[test]
+    fn plan_includes_graph_config() {
+        let plan = compile_one(
+            r#"graph G {
+                config {
+                    base_url: "http://localhost:3333"
+                    timeout: "10s"
+                }
+                node A {}
+            }"#,
+        );
+        assert_eq!(
+            plan.config.get("base_url").unwrap(),
+            "http://localhost:3333"
+        );
+        assert_eq!(plan.config.get("timeout").unwrap(), "10s");
+    }
+
+    #[test]
+    fn plan_step_includes_node_config() {
+        let plan = compile_one(
+            r#"graph G {
+                node A {
+                    config {
+                        retries: "3"
+                    }
+                }
+            }"#,
+        );
+        assert_eq!(plan.steps[0].config.get("retries").unwrap(), "3");
+    }
+
+    #[test]
+    fn plan_config_absent_when_no_config_block() {
+        let plan = compile_one(
+            r#"graph G {
+                node A {}
+            }"#,
+        );
+        assert!(plan.config.is_empty());
+        assert!(plan.steps[0].config.is_empty());
     }
 }

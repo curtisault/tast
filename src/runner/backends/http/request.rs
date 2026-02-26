@@ -102,6 +102,7 @@ fn substitute_value(value: &str, inputs: &HashMap<String, String>) -> String {
 mod tests {
     use super::*;
     use crate::plan::types::{PlanStep, StepEntry};
+    use std::collections::HashMap;
 
     fn empty_step(node: &str) -> PlanStep {
         PlanStep {
@@ -115,6 +116,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 

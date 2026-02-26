@@ -1,9 +1,13 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// A compiled test plan, ready for output.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TestPlan {
     pub plan: PlanMetadata,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub config: HashMap<String, String>,
     pub steps: Vec<PlanStep>,
 }
 
@@ -37,6 +41,8 @@ pub struct PlanStep {
     pub inputs: Vec<InputEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub config: HashMap<String, String>,
 }
 
 /// A given/when/then entry in a plan step.

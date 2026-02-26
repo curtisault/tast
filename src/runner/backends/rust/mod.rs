@@ -519,6 +519,7 @@ mod tests {
             assertions: vec![make_step_entry("then", "something happens")],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 
@@ -530,6 +531,7 @@ mod tests {
                 nodes_total: steps.len(),
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps,
         }
     }
@@ -567,6 +569,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let output = backend.generate_test_fn(&step);
         assert!(output.contains("fn test_setup_user()"));
@@ -591,6 +594,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let output = backend.generate_test_fn(&step);
         assert!(output.contains("// a registered user"));
@@ -618,6 +622,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let output = backend.generate_test_fn(&step);
         assert!(output.contains("_data.insert(\"email\", \"test@example.com\")"));
@@ -638,6 +643,7 @@ mod tests {
             assertions: vec![make_step_entry("then", "the system returns a token")],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let output = backend.generate_test_fn(&step);
         assert!(output.contains("// --- Given ---"));
@@ -665,6 +671,7 @@ mod tests {
             ],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let output = backend.generate_test_fn(&step);
         assert!(output.contains("// the account is created"));
@@ -723,6 +730,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let plan = make_plan("EscapeTest", vec![step]);
         let output = backend.generate_test_file(&plan);
@@ -808,6 +816,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         };
         let plan = make_plan("EscapeValidation", vec![step]);
         let output = backend.generate_test_file(&plan);
@@ -995,6 +1004,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         );
         let resolutions = vec![vec![(
@@ -1027,6 +1037,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         );
         let resolutions = vec![vec![(
@@ -1057,6 +1068,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         );
         let resolutions = vec![vec![

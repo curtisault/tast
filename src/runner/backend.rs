@@ -186,6 +186,7 @@ mod tests {
 
     fn dummy_plan() -> TestPlan {
         use crate::plan::types::PlanMetadata;
+        use std::collections::HashMap;
         TestPlan {
             plan: PlanMetadata {
                 name: "Test".into(),
@@ -193,6 +194,7 @@ mod tests {
                 nodes_total: 1,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps: vec![PlanStep {
                 order: 1,
                 node: "StepA".into(),
@@ -204,6 +206,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         }
     }

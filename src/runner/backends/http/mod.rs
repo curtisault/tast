@@ -30,11 +30,40 @@ pub struct HttpConfig {
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://localhost:3000".to_string(),
+            base_url: String::new(),
             default_headers: HashMap::new(),
             timeout: Duration::from_secs(30),
             follow_redirects: true,
         }
+    }
+}
+
+impl HttpConfig {
+    /// Build an `HttpConfig` from a plan's graph-level config map.
+    ///
+    /// Reads `base_url` and `timeout` keys; missing keys fall back to defaults.
+    pub fn from_plan_config(config: &HashMap<String, String>) -> Self {
+        let mut http_config = Self::default();
+        if let Some(url) = config.get("base_url") {
+            http_config.base_url = url.clone();
+        }
+        if let Some(timeout_str) = config.get("timeout")
+            && let Some(secs) = parse_duration_secs(timeout_str)
+        {
+            http_config.timeout = Duration::from_secs(secs);
+        }
+        http_config
+    }
+}
+
+/// Parse a duration string like "10s", "30s" into seconds.
+/// Returns `None` if the format is unrecognized.
+fn parse_duration_secs(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if let Some(num) = s.strip_suffix('s') {
+        num.trim().parse().ok()
+    } else {
+        s.parse().ok()
     }
 }
 
@@ -108,6 +137,7 @@ impl HttpBackend {
                     detail: None,
                 })?;
 
+                // TODO: populate response headers from ureq response
                 Ok(HttpResponse {
                     status,
                     headers: HashMap::new(),
@@ -168,6 +198,19 @@ impl TestBackend for HttpBackend {
             // No HTTP pattern found — skip this step.
             return Ok(StepResult::skipped(&step.node));
         };
+
+        // Validate base_url is configured.
+        if self.config.base_url.is_empty() {
+            return Ok(StepResult::failed(
+                &step.node,
+                Duration::ZERO,
+                StepError {
+                    kind: StepErrorKind::RuntimeError,
+                    message: "no base_url configured — set it via graph config block".into(),
+                    detail: None,
+                },
+            ));
+        }
 
         // Resolve inputs from context.
         let resolved_inputs = if !step.inputs.is_empty() {
@@ -280,6 +323,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 
@@ -302,6 +346,7 @@ mod tests {
                 nodes_total: steps.len(),
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps,
         }
     }
@@ -321,7 +366,7 @@ mod tests {
     #[test]
     fn http_backend_default_config() {
         let config = HttpConfig::default();
-        assert_eq!(config.base_url, "http://localhost:3000");
+        assert!(config.base_url.is_empty());
         assert!(config.default_headers.is_empty());
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert!(config.follow_redirects);
@@ -398,7 +443,10 @@ mod tests {
 
     #[test]
     fn step_with_missing_inputs_fails() {
-        let backend = HttpBackend::default();
+        let backend = HttpBackend::new(HttpConfig {
+            base_url: "http://127.0.0.1:19999".to_string(),
+            ..Default::default()
+        });
         let mut step = http_step("GetUser", "GET /api/users/{user_id}");
         step.inputs.push(InputEntry {
             field: "user_id".to_string(),
@@ -464,5 +512,55 @@ mod tests {
         let context = RunContext::new("/tmp");
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.files.is_empty());
+    }
+
+    // --- Config from plan tests ---
+
+    #[test]
+    fn http_config_from_plan_config() {
+        let mut config = HashMap::new();
+        config.insert("base_url".to_string(), "http://localhost:8080".to_string());
+        let http_config = HttpConfig::from_plan_config(&config);
+        assert_eq!(http_config.base_url, "http://localhost:8080");
+        assert_eq!(http_config.timeout, Duration::from_secs(30)); // default
+    }
+
+    #[test]
+    fn http_config_from_plan_config_with_timeout() {
+        let mut config = HashMap::new();
+        config.insert("base_url".to_string(), "http://localhost:8080".to_string());
+        config.insert("timeout".to_string(), "10s".to_string());
+        let http_config = HttpConfig::from_plan_config(&config);
+        assert_eq!(http_config.base_url, "http://localhost:8080");
+        assert_eq!(http_config.timeout, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn http_config_from_plan_config_missing_keys_uses_defaults() {
+        let config = HashMap::new();
+        let http_config = HttpConfig::from_plan_config(&config);
+        assert!(http_config.base_url.is_empty());
+        assert_eq!(http_config.timeout, Duration::from_secs(30));
+        assert!(http_config.follow_redirects);
+    }
+
+    #[test]
+    fn empty_base_url_returns_clear_error() {
+        let backend = HttpBackend::default();
+        let step = http_step("GetUsers", "GET /api/users");
+        let harness = GeneratedHarness {
+            files: vec![],
+            entry_point: std::path::PathBuf::new(),
+            metadata: HashMap::new(),
+        };
+        let mut context = RunContext::new("/tmp");
+        let result = backend.execute_step(&step, &harness, &mut context).unwrap();
+        assert_eq!(result.status, StepStatus::Failed);
+        let error = result.error.as_ref().unwrap();
+        assert!(
+            error.message.contains("no base_url configured"),
+            "got: {}",
+            error.message
+        );
     }
 }

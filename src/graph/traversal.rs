@@ -168,6 +168,7 @@ pub fn extract_subgraph(tg: &TestGraph, nodes: &[NodeIndex]) -> TestGraph {
         name: tg.name.clone(),
         graph: new_graph,
         node_indices: new_node_indices,
+        config: tg.config.clone(),
     }
 }
 
@@ -244,6 +245,7 @@ mod tests {
     fn topological_detects_cycle() {
         use crate::ir::{IrEdge, IrGraph, IrNode};
         use crate::util::span::Span;
+        use std::collections::HashMap;
 
         let ir = IrGraph {
             name: "Cyclic".into(),
@@ -254,6 +256,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 IrNode {
@@ -262,6 +265,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
             ],
@@ -286,6 +290,7 @@ mod tests {
                 },
             ],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let tg = build(&ir);

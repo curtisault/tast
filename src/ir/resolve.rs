@@ -282,6 +282,7 @@ mod tests {
                 steps: vec![],
                 tags: vec![],
                 requires: vec![],
+                config: HashMap::new(),
                 span: Span::default(),
             }],
             edges: vec![crate::ir::IrEdge {
@@ -294,6 +295,7 @@ mod tests {
                 span: Span::default(),
             }],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
 
@@ -323,6 +325,7 @@ mod tests {
                 span: Span::default(),
             }],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let result = resolve_cross_graph_edges(&mut graph, &resolved);
@@ -353,6 +356,7 @@ mod tests {
                 span: Span::default(),
             }],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let result = resolve_cross_graph_edges(&mut graph, &resolved);
@@ -378,6 +382,7 @@ mod tests {
                 steps: vec![],
                 tags: vec![],
                 requires: vec![],
+                config: HashMap::new(),
                 span: Span::default(),
             }],
             edges: vec![crate::ir::IrEdge {
@@ -390,6 +395,7 @@ mod tests {
                 span: Span::default(),
             }],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
 
@@ -416,6 +422,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 crate::ir::IrNode {
@@ -424,6 +431,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
             ],
@@ -448,6 +456,7 @@ mod tests {
                 },
             ],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
 

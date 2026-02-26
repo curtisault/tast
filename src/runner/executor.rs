@@ -84,6 +84,7 @@ impl TestRunner {
         let mut context = RunContext::new(&self.config.working_dir);
         context.default_timeout = self.config.timeout;
         context.capture_output = self.config.capture_output;
+        context.graph_config = plan.config.clone();
 
         let harness = backend
             .generate_harness(plan, &context)
@@ -519,6 +520,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 
@@ -531,6 +533,7 @@ mod tests {
                 nodes_total: nodes,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps,
         }
     }
@@ -1054,6 +1057,7 @@ mod tests {
                 })
                 .collect(),
             outputs: vec![],
+            config: HashMap::new(),
         }
     }
 
