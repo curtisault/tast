@@ -98,6 +98,10 @@ enum Commands {
         /// Graph traversal strategy
         #[arg(long, short = 's', default_value = "topological")]
         strategy: String,
+
+        /// Base URL for HTTP backend (e.g., http://localhost:3000)
+        #[arg(long)]
+        base_url: Option<String>,
     },
 
     /// Visualize the test graph (DOT/Mermaid output)
@@ -189,6 +193,7 @@ fn main() {
             fail_fast,
             keep_harness,
             strategy,
+            base_url,
         }) => {
             if files.is_empty() {
                 eprintln!("error: no input files provided");
@@ -205,6 +210,7 @@ fn main() {
                 fail_fast,
                 keep_harness,
                 strategy,
+                base_url,
             };
             match commands::run_run(options) {
                 Ok(success) => {

@@ -539,7 +539,7 @@ mod tests {
     }
 
     fn mock_registry(backend: MockBackend) -> BackendRegistry {
-        let mut reg = BackendRegistry::new();
+        let mut reg = BackendRegistry::empty();
         reg.register(Box::new(backend));
         reg
     }

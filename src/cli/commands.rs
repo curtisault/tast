@@ -16,6 +16,7 @@ use crate::parser::parse::parse;
 use crate::plan::compiler::compile_with_strategy;
 use crate::plan::filter::{filter_plan, parse_filter};
 use crate::runner::executor::{RunConfig, TestRunner};
+use crate::runner::registry::BackendRegistry;
 use crate::runner::report::to_report;
 
 /// Options for the `plan` command.
@@ -297,6 +298,7 @@ pub struct RunOptions {
     pub fail_fast: bool,
     pub keep_harness: bool,
     pub strategy: String,
+    pub base_url: Option<String>,
 }
 
 /// Run the `run` command: parse .tast files, execute tests, and emit results.
@@ -320,6 +322,22 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
 
     let working_dir = std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
 
+    // Validate --base-url usage.
+    if options.base_url.is_some()
+        && options.backend.as_deref() != Some("http")
+        && options.backend.is_some()
+    {
+        return Err("--base-url can only be used with --backend http".to_owned());
+    }
+
+    // Require --base-url when --backend http is explicitly selected.
+    if options.backend.as_deref() == Some("http") && options.base_url.is_none() {
+        return Err(
+            "--backend http requires --base-url (e.g., --base-url http://localhost:3000)"
+                .to_owned(),
+        );
+    }
+
     let config = RunConfig {
         backend_name: options.backend,
         timeout: Duration::from_secs(options.timeout),
@@ -330,7 +348,16 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
         clean_harness: !options.keep_harness,
     };
 
-    let runner = TestRunner::new(config);
+    // Build the registry: include HTTP backend if --base-url was provided.
+    let registry = if let Some(base_url) = &options.base_url {
+        let mut http_config = std::collections::HashMap::new();
+        http_config.insert("base_url".to_string(), base_url.clone());
+        BackendRegistry::with_http_from_config(&http_config)
+    } else {
+        BackendRegistry::new()
+    };
+
+    let runner = TestRunner::with_registry(config, registry);
     let mut all_success = true;
 
     for file in &options.files {
