@@ -1,0 +1,56 @@
+# HTTP Pipeline — self-validation for Phase 4.5 HTTP backend
+#
+# This .tast file describes the HTTP backend's execution pipeline:
+# build request → send request → evaluate assertions / extract outputs.
+
+graph HttpPipeline {
+
+  node BuildRequest {
+    describe "Build an HTTP request from a plan step"
+
+    given a PlanStep with an HTTP action pattern
+    and a configured base_url
+    when the HTTP backend resolves inputs and builds the request
+    then a ResolvedRequest is produced with method, URL, headers, and body
+  }
+
+  node SendRequest {
+    describe "Send the HTTP request and receive a response"
+
+    given a fully resolved HTTP request
+    when the HTTP backend sends the request via ureq
+    then an HttpResponse is returned with status, headers, and body
+  }
+
+  node EvaluateAssertions {
+    describe "Evaluate step assertions against the HTTP response"
+
+    given an HttpResponse and step assertions
+    when each assertion is evaluated
+    then assertion results indicate pass or fail with messages
+  }
+
+  node ExtractOutputs {
+    describe "Extract output fields from the JSON response body"
+
+    given an HttpResponse with a JSON body
+    and step output field names
+    when the extractor scans the response
+    then matching fields are recorded in RunContext for downstream steps
+  }
+
+  BuildRequest -> SendRequest {
+    passes { resolved_request }
+    describe "Resolved request flows to sender"
+  }
+
+  SendRequest -> EvaluateAssertions {
+    passes { response }
+    describe "Response flows to assertion evaluator"
+  }
+
+  SendRequest -> ExtractOutputs {
+    passes { response_body }
+    describe "Response body flows to output extractor"
+  }
+}
