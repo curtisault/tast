@@ -5,6 +5,56 @@
 
 ---
 
+## Quick Start: Running Tests
+
+```bash
+# Run a .tast file with auto-detected backend
+tast run tests/tast/shell_pipeline.tast
+
+# Specify a backend explicitly
+tast run -b shell tests/tast/shell_pipeline.tast
+tast run -b rust tests/tast/runner_pipeline.tast
+tast run -b http --base-url http://localhost:3000 tests/tast/http_pipeline.tast
+```
+
+### Backends
+
+| Backend | Flag | Description |
+|---------|------|-------------|
+| **Shell** | `-b shell` | Runs steps as subprocess commands |
+| **Rust** | `-b rust` | Convention-based binding to `cargo test` functions |
+| **HTTP** | `-b http` | Request/response testing with status, header, and body assertions |
+
+### Options
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--backend` | `-b` | auto-detect | Backend to use |
+| `--format` | `-f` | `yaml` | Output format: `yaml`, `json`, `junit` |
+| `--output` | `-o` | stdout | Write results to a file |
+| `--timeout` | `-t` | `60` | Per-step timeout in seconds |
+| `--parallel` | `-p` | `1` | Max parallel steps |
+| `--strategy` | `-s` | `topological` | Graph traversal strategy |
+| `--filter` | | | Tag filter expression |
+| `--fail-fast` | | | Stop on first failure |
+| `--keep-harness` | | | Keep generated harness files (debugging) |
+| `--base-url` | | | Base URL for HTTP backend |
+
+### Examples
+
+```bash
+# JSON output to file, stop on first failure
+tast run -b shell -f json -o results.json --fail-fast tests/tast/shell_pipeline.tast
+
+# Rust backend with 30s timeout and parallel execution
+tast run -b rust -t 30 -p 4 tests/tast/runner_pipeline.tast
+
+# Generate a test plan without executing (plan-only mode)
+tast plan tests/tast/runner_pipeline.tast
+```
+
+---
+
 ## 1. Vision & Goals
 
 TAST is a standalone CLI tool written in Rust that lets engineers describe integration and end-to-end tests as a **directed graph of connected assertions** using natural language. Think Gherkin's readability meets GraphQL's relational structure — but purpose-built for testing.
