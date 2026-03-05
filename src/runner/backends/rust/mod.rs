@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use crate::plan::types::{PlanStep, StepEntry, TestPlan};
 use crate::runner::backend::{BackendError, BackendErrorKind, GeneratedHarness, TestBackend};
-use crate::runner::context::RunContext;
-use crate::runner::result::StepResult;
+use crate::runner::context::{self, RunContext};
+use crate::runner::result::{StepError, StepErrorKind, StepResult, StepStatus};
 
 use self::mapping::resolve_mapping;
 use self::resolve::ResolvedBinding;
@@ -326,10 +326,126 @@ impl TestBackend for RustBackend {
         &self,
         step: &PlanStep,
         _harness: &GeneratedHarness,
-        _context: &mut RunContext,
+        context: &mut RunContext,
     ) -> Result<StepResult, BackendError> {
-        // Stub — full implementation in Part D
-        Ok(StepResult::skipped(&step.node))
+        // 1. Resolve inputs from upstream steps.
+        if !step.inputs.is_empty() {
+            let input_pairs: Vec<(String, String)> = step
+                .inputs
+                .iter()
+                .map(|i| (i.field.clone(), i.from.clone()))
+                .collect();
+
+            if let Err(errors) = context.resolve_inputs(&input_pairs) {
+                return Ok(StepResult::failed(
+                    &step.node,
+                    Duration::ZERO,
+                    StepError {
+                        kind: StepErrorKind::MissingInput,
+                        message: format!("missing input(s): {}", errors.join("; ")),
+                        detail: None,
+                    },
+                ));
+            }
+        }
+
+        // 2. Build test filter name for this step.
+        let fn_name = to_snake_case(&step.node);
+        let filter_name = format!("tast_generated::test_{fn_name}");
+
+        // 3. Run cargo test with the filter.
+        let output = self.run_cargo_test(
+            context.working_dir(),
+            Some(&filter_name),
+            context.default_timeout,
+        )?;
+
+        // 4. Parse the cargo output.
+        let parsed_results = output::parse_cargo_output(&output.stdout, &output.stderr);
+
+        // 5. Handle compilation errors.
+        if let Some(comp) = parsed_results
+            .iter()
+            .find(|r| r.test_name == "<compilation>")
+        {
+            return Ok(StepResult {
+                node: step.node.clone(),
+                status: StepStatus::Error,
+                duration: output.duration,
+                outputs: HashMap::new(),
+                assertions: vec![],
+                error: Some(StepError {
+                    kind: StepErrorKind::CompilationError,
+                    message: "generated harness failed to compile".into(),
+                    detail: comp.message.clone(),
+                }),
+                stdout: output.stdout.clone(),
+                stderr: output.stderr.clone(),
+            });
+        }
+
+        // 6. Handle timeout.
+        if output.timed_out {
+            return Ok(StepResult {
+                node: step.node.clone(),
+                status: StepStatus::Error,
+                duration: output.duration,
+                outputs: HashMap::new(),
+                assertions: vec![],
+                error: Some(StepError {
+                    kind: StepErrorKind::Timeout,
+                    message: "cargo test exceeded timeout".into(),
+                    detail: None,
+                }),
+                stdout: output.stdout.clone(),
+                stderr: output.stderr.clone(),
+            });
+        }
+
+        // 7. Find the test result matching this step.
+        let test_name = format!("tast_generated::test_{fn_name}");
+        let matched = parsed_results.iter().find(|r| r.test_name == test_name);
+
+        let Some(parsed) = matched else {
+            return Ok(StepResult::skipped(&step.node));
+        };
+
+        // 8. Extract and record outputs from test stdout.
+        let outputs = context::extract_step_outputs(&parsed.stdout);
+        if !outputs.is_empty() {
+            context.record_outputs(&step.node, outputs.clone());
+        }
+
+        // 9. Build the final StepResult.
+        let status = if parsed.passed {
+            StepStatus::Passed
+        } else {
+            StepStatus::Failed
+        };
+
+        let error = if !parsed.passed {
+            Some(StepError {
+                kind: StepErrorKind::AssertionFailed,
+                message: parsed
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "test failed".into()),
+                detail: None,
+            })
+        } else {
+            None
+        };
+
+        Ok(StepResult {
+            node: step.node.clone(),
+            status,
+            duration: output.duration,
+            outputs,
+            assertions: vec![],
+            error,
+            stdout: output.stdout.clone(),
+            stderr: output.stderr.clone(),
+        })
     }
 
     fn cleanup(&self, harness: &GeneratedHarness) -> Result<(), BackendError> {
