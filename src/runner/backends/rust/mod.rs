@@ -201,10 +201,13 @@ impl RustBackend {
             cmd.arg(name);
         }
 
-        // Separator for test runner args
+        // Separator for test runner args.
+        // Note: --nocapture is intentionally NOT used here. With --nocapture,
+        // test stdout is interleaved into cargo's result lines, breaking the
+        // output parser. Without it, cargo captures per-test stdout and shows
+        // it in the failure section, which parse_cargo_output can extract.
         cmd.arg("--");
         cmd.arg("--test-threads=1");
-        cmd.arg("--nocapture");
 
         // Additional user-configured args
         for arg in &self.test_args {
@@ -411,7 +414,14 @@ impl TestBackend for RustBackend {
         };
 
         // 8. Extract and record outputs from test stdout.
-        let outputs = context::extract_step_outputs(&parsed.stdout);
+        // For passing tests, cargo doesn't capture per-test stdout in the failures
+        // section. Since we filter to a single test, fall back to the overall stdout.
+        let test_stdout = if parsed.stdout.is_empty() {
+            &output.stdout
+        } else {
+            &parsed.stdout
+        };
+        let outputs = context::extract_step_outputs(test_stdout);
         if !outputs.is_empty() {
             context.record_outputs(&step.node, outputs.clone());
         }
@@ -981,7 +991,7 @@ mod tests {
         assert_eq!(cmd.get_program().to_string_lossy(), "cargo");
         assert!(args.contains(&"test".to_string()));
         assert!(args.contains(&"--test-threads=1".to_string()));
-        assert!(args.contains(&"--nocapture".to_string()));
+        assert!(!args.contains(&"--nocapture".to_string()));
     }
 
     #[test]
