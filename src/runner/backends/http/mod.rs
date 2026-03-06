@@ -52,6 +52,9 @@ impl HttpConfig {
         {
             http_config.timeout = Duration::from_secs(secs);
         }
+        if let Some(v) = config.get("follow_redirects") {
+            http_config.follow_redirects = v != "false";
+        }
         http_config
     }
 }
@@ -85,10 +88,15 @@ impl HttpBackend {
         &self,
         resolved: &request::ResolvedRequest,
     ) -> Result<HttpResponse, BackendError> {
-        let config = ureq::config::Config::builder()
+        let mut builder = ureq::config::Config::builder()
             .http_status_as_error(false)
-            .timeout_global(Some(self.config.timeout))
-            .build();
+            .timeout_global(Some(self.config.timeout));
+
+        if !self.config.follow_redirects {
+            builder = builder.max_redirects(0);
+        }
+
+        let config = builder.build();
 
         let agent = ureq::Agent::new_with_config(config);
 

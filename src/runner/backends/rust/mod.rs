@@ -5,8 +5,9 @@ pub mod resolve;
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::plan::types::{PlanStep, StepEntry, TestPlan};
@@ -234,9 +235,9 @@ impl RustBackend {
         let mut cmd = self.build_command(working_dir, test_name);
 
         let start = Instant::now();
-        let child = cmd
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| BackendError {
                 kind: BackendErrorKind::ExecutionFailed,
@@ -244,19 +245,62 @@ impl RustBackend {
                 detail: Some(e.to_string()),
             })?;
 
-        let result = child.wait_with_output().map_err(|e| BackendError {
-            kind: BackendErrorKind::ExecutionFailed,
-            message: "failed to wait for cargo test".into(),
-            detail: Some(e.to_string()),
-        })?;
+        // Take stdout/stderr handles and read in background threads to prevent pipe deadlock.
+        let stdout_handle = child.stdout.take();
+        let stderr_handle = child.stderr.take();
 
+        let stdout_thread = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut h) = stdout_handle {
+                let _ = h.read_to_string(&mut buf);
+            }
+            buf
+        });
+        let stderr_thread = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut h) = stderr_handle {
+                let _ = h.read_to_string(&mut buf);
+            }
+            buf
+        });
+
+        // Poll with timeout.
+        let poll_interval = Duration::from_millis(50);
+        let mut timed_out = false;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_status)) => break,
+                Ok(None) if start.elapsed() >= timeout => {
+                    let _ = child.kill();
+                    let _ = child.wait(); // reap zombie
+                    timed_out = true;
+                    break;
+                }
+                Ok(None) => std::thread::sleep(poll_interval),
+                Err(e) => {
+                    return Err(BackendError {
+                        kind: BackendErrorKind::ExecutionFailed,
+                        message: "failed to wait for cargo test".into(),
+                        detail: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        let exit_code = child
+            .try_wait()
+            .ok()
+            .flatten()
+            .and_then(|s| s.code())
+            .unwrap_or(-1);
+        let stdout = stdout_thread.join().unwrap_or_default();
+        let stderr = stderr_thread.join().unwrap_or_default();
         let duration = start.elapsed();
-        let timed_out = duration >= timeout;
 
         Ok(ProcessOutput {
-            exit_code: result.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&result.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
+            exit_code,
+            stdout,
+            stderr,
             duration,
             timed_out,
         })

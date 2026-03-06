@@ -164,7 +164,8 @@ fn shell_e2e_data_passing() {
 
 #[test]
 fn shell_e2e_timeout() {
-    // Direct backend call with a script that sleeps, context timeout set very low.
+    // Test real timeout enforcement: generate harness, then replace the generated script
+    // with one that actually sleeps, and execute with a short timeout.
     let backend = ShellBackend::new();
     let plan = make_shell_plan(
         "ShellTimeout",
@@ -177,27 +178,30 @@ fn shell_e2e_timeout() {
     );
 
     let mut context = RunContext::new("/tmp");
-    context.default_timeout = Duration::from_millis(50);
+    context.default_timeout = Duration::from_millis(200);
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
+
+    // Overwrite the generated script with one that actually sleeps.
+    let script_path = &harness.files[0];
+    std::fs::write(script_path, "#!/bin/sh\nsleep 10\n").unwrap();
+
     let step = &plan.steps[0];
     let result = backend.execute_step(step, &harness, &mut context).unwrap();
 
-    // The script runs "exit 0" (generated script), but the timeout is checked post-execution.
-    // With shell scripts, the timeout is a post-hoc check on duration.
-    // Since the generated script just has comments (no actual sleep), it likely completes fast.
-    // Test the mechanism: if the script finishes within timeout, it passes.
-    // For a true timeout test, we need to bypass script generation and use a real sleep script.
-    // Clean up harness.
-    backend.cleanup(&harness).unwrap();
-
-    // The generated script doesn't actually execute "sleep 10" (it's just a comment),
-    // so verify the step at least executed successfully.
-    assert!(
-        result.status == StepStatus::Passed || result.status == StepStatus::Error,
-        "step should either pass quickly or timeout, got: {:?}",
+    assert_eq!(
+        result.status,
+        StepStatus::Error,
+        "timed-out step should have Error status, got: {:?}",
         result.status
     );
+    assert_eq!(
+        result.error.as_ref().unwrap().kind,
+        StepErrorKind::Timeout,
+        "error kind should be Timeout"
+    );
+
+    backend.cleanup(&harness).unwrap();
 }
 
 #[test]

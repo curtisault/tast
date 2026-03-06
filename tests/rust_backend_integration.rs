@@ -83,6 +83,7 @@ fn rust_runner(working_dir: &Path) -> TestRunner {
 // Built once and shared across all tests that need real cargo execution.
 
 struct TempCargoProject {
+    _temp_dir: tempfile::TempDir,
     dir: PathBuf,
 }
 
@@ -90,8 +91,6 @@ impl TempCargoProject {
     fn create(test_source: &str) -> Self {
         let tmp = tempfile::tempdir().expect("failed to create temp dir");
         let dir = tmp.path().to_path_buf();
-        // Leak the TempDir so it isn't deleted on drop — we clean up in Drop.
-        std::mem::forget(tmp);
 
         // Cargo.toml
         std::fs::write(
@@ -113,17 +112,14 @@ edition = "2021"
         std::fs::write(dir.join("tests/tast_tests.rs"), test_source)
             .expect("failed to write test source");
 
-        Self { dir }
+        Self {
+            _temp_dir: tmp,
+            dir,
+        }
     }
 
     fn path(&self) -> &Path {
         &self.dir
-    }
-}
-
-impl Drop for TempCargoProject {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

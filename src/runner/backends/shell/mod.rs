@@ -1,8 +1,9 @@
 pub mod script;
 
 use std::collections::HashMap;
+use std::io::Read as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::plan::types::{PlanStep, TestPlan};
@@ -87,10 +88,7 @@ impl TestBackend for ShellBackend {
             files.push(script_path);
         }
 
-        let entry_point = temp_dir.path().to_path_buf();
-
-        // Leak the temp directory to keep it alive (it will be deleted by cleanup()).
-        std::mem::forget(temp_dir);
+        let entry_point = temp_dir.keep();
 
         Ok(GeneratedHarness {
             files,
@@ -245,20 +243,73 @@ impl ShellBackend {
             cmd.env(key, value);
         }
 
-        // Execute with timeout handling.
-        let output = cmd.output().map_err(|e| BackendError {
-            kind: BackendErrorKind::ExecutionFailed,
-            message: format!("failed to execute script: {}", e),
-            detail: None,
-        })?;
+        // Spawn the child process with piped stdio.
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| BackendError {
+                kind: BackendErrorKind::ExecutionFailed,
+                message: format!("failed to execute script: {}", e),
+                detail: None,
+            })?;
 
+        // Take stdout/stderr handles and read in background threads to prevent pipe deadlock.
+        let stdout_handle = child.stdout.take();
+        let stderr_handle = child.stderr.take();
+
+        let stdout_thread = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut h) = stdout_handle {
+                let _ = h.read_to_string(&mut buf);
+            }
+            buf
+        });
+        let stderr_thread = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut h) = stderr_handle {
+                let _ = h.read_to_string(&mut buf);
+            }
+            buf
+        });
+
+        // Poll with timeout.
+        let poll_interval = Duration::from_millis(50);
+        let mut timed_out = false;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_status)) => break,
+                Ok(None) if start.elapsed() >= timeout => {
+                    let _ = child.kill();
+                    let _ = child.wait(); // reap zombie
+                    timed_out = true;
+                    break;
+                }
+                Ok(None) => std::thread::sleep(poll_interval),
+                Err(e) => {
+                    return Err(BackendError {
+                        kind: BackendErrorKind::ExecutionFailed,
+                        message: format!("failed to wait for script: {}", e),
+                        detail: None,
+                    });
+                }
+            }
+        }
+
+        let exit_code = child
+            .try_wait()
+            .ok()
+            .flatten()
+            .and_then(|s| s.code())
+            .unwrap_or(-1);
+        let stdout = stdout_thread.join().unwrap_or_default();
+        let stderr = stderr_thread.join().unwrap_or_default();
         let duration = start.elapsed();
-        let timed_out = duration > timeout;
 
         Ok(ProcessOutput {
-            exit_code: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code,
+            stdout,
+            stderr,
             duration,
             timed_out,
         })
@@ -620,7 +671,9 @@ mod tests {
             std::fs::set_permissions(&script_path, perms)?;
         }
 
-        std::mem::forget(temp_dir); // Keep directory alive
+        // Keep temp_dir so the script file persists for the test.
+        // Test helpers don't clean up — acceptable for short-lived test processes.
+        let _ = temp_dir.keep();
         Ok(script_path)
     }
 }
