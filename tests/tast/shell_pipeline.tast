@@ -1,0 +1,42 @@
+# Shell Pipeline — self-validation for Phase 4.5 shell backend
+#
+# This .tast file describes the shell backend's execution pipeline:
+# generate script → execute script → capture output.
+
+graph ShellPipeline {
+
+  node GenerateScript {
+    describe "Generate a shell script from a plan step"
+
+    given a compiled PlanStep with actions and assertions
+    when the shell backend generates a script
+    then a valid shell script is written to the harness directory
+  }
+
+  node ExecuteScript {
+    describe "Execute the generated shell script"
+
+    given a generated shell script
+    and resolved input environment variables
+    when the shell backend runs the script
+    then the script exits with a status code
+  }
+
+  node CaptureOutput {
+    describe "Capture and parse script output"
+
+    given script stdout and stderr
+    when the runner parses TAST_OUTPUT markers
+    then output key-value pairs are extracted and recorded
+  }
+
+  GenerateScript -> ExecuteScript {
+    passes { script_path }
+    describe "Script path flows to executor"
+  }
+
+  ExecuteScript -> CaptureOutput {
+    passes { stdout }
+    describe "Script output flows to parser"
+  }
+}

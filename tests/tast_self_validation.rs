@@ -197,3 +197,65 @@ fn self_validation_runner_pipeline_edge_count() {
         "RunnerPipeline should have 3 edges"
     );
 }
+
+// ── Shell Pipeline self-validation ──────────────────────────
+
+#[test]
+fn self_validation_shell_pipeline_parses() {
+    let result = run_validate(&[tast_file("shell_pipeline.tast")]);
+    let output = result.expect("shell_pipeline.tast should validate");
+    assert!(output.contains("ShellPipeline is valid"));
+}
+
+#[test]
+fn self_validation_shell_pipeline_plans() {
+    let yaml = run_plan(&[tast_file("shell_pipeline.tast")], &default_opts())
+        .expect("plan should succeed");
+    assert!(yaml.contains("name: ShellPipeline"));
+    assert!(yaml.contains("traversal: topological"));
+    let deserialized: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).expect("output should be valid YAML");
+    assert!(deserialized.get("plan").is_some());
+    assert!(deserialized.get("steps").is_some());
+}
+
+// ── HTTP Pipeline self-validation ───────────────────────────
+
+#[test]
+fn self_validation_http_pipeline_parses() {
+    let result = run_validate(&[tast_file("http_pipeline.tast")]);
+    let output = result.expect("http_pipeline.tast should validate");
+    assert!(output.contains("HttpPipeline is valid"));
+}
+
+#[test]
+fn self_validation_http_pipeline_plans() {
+    let yaml =
+        run_plan(&[tast_file("http_pipeline.tast")], &default_opts()).expect("plan should succeed");
+    assert!(yaml.contains("name: HttpPipeline"));
+    assert!(yaml.contains("traversal: topological"));
+    let deserialized: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).expect("output should be valid YAML");
+    assert!(deserialized.get("plan").is_some());
+    assert!(deserialized.get("steps").is_some());
+}
+
+#[test]
+fn self_validation_http_pipeline_node_count() {
+    let result = run_validate(&[tast_file("http_pipeline.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("4 nodes"),
+        "HttpPipeline should have 4 nodes"
+    );
+}
+
+#[test]
+fn self_validation_http_pipeline_edge_count() {
+    let result = run_validate(&[tast_file("http_pipeline.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("3 edges"),
+        "HttpPipeline should have 3 edges"
+    );
+}

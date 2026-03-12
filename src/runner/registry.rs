@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::runner::backend::TestBackend;
+use crate::runner::backends::http::{HttpBackend, HttpConfig};
+use crate::runner::backends::rust::RustBackend;
+use crate::runner::backends::shell::ShellBackend;
 
 /// Registry of available test backends.
 ///
@@ -13,11 +17,27 @@ pub struct BackendRegistry {
 impl BackendRegistry {
     /// Create a registry with all built-in backends.
     ///
-    /// Currently registers: (none yet — Rust backend added in Part C).
+    /// Registers Rust and Shell backends by default. HTTP is excluded
+    /// because it requires a configured `base_url`.
     pub fn new() -> Self {
-        Self {
+        let mut registry = Self {
             backends: Vec::new(),
-        }
+        };
+        registry.register(Box::new(RustBackend::new()));
+        registry.register(Box::new(ShellBackend::new()));
+        registry
+    }
+
+    /// Create a registry with the HTTP backend configured from plan config.
+    ///
+    /// Includes all default backends plus HTTP with settings from the
+    /// graph-level config map (reads `base_url`, `timeout`, etc.).
+    pub fn with_http_from_config(config: &HashMap<String, String>) -> Self {
+        let mut registry = Self::new();
+        registry.register(Box::new(HttpBackend::new(HttpConfig::from_plan_config(
+            config,
+        ))));
+        registry
     }
 
     /// Look up a backend by name (e.g., "rust").
@@ -40,6 +60,15 @@ impl BackendRegistry {
     /// List all registered backend names.
     pub fn list(&self) -> Vec<&str> {
         self.backends.iter().map(|b| b.name()).collect()
+    }
+
+    /// Create an empty registry with no built-in backends.
+    ///
+    /// Useful for testing or when full control over registered backends is needed.
+    pub fn empty() -> Self {
+        Self {
+            backends: Vec::new(),
+        }
     }
 
     /// Register an additional backend.
@@ -108,13 +137,6 @@ mod tests {
         }
     }
 
-    fn rust_backend() -> Box<dyn TestBackend> {
-        Box::new(FakeBackend {
-            backend_name: "rust",
-            marker_file: "Cargo.toml",
-        })
-    }
-
     fn elixir_backend() -> Box<dyn TestBackend> {
         Box::new(FakeBackend {
             backend_name: "elixir",
@@ -122,43 +144,77 @@ mod tests {
         })
     }
 
+    // --- Built-in registration tests ---
+
     #[test]
-    fn registry_new_is_empty() {
+    fn registry_new_has_rust_backend() {
         let reg = BackendRegistry::new();
-        assert!(reg.list().is_empty());
-    }
-
-    #[test]
-    fn registry_register_and_list() {
-        let mut reg = BackendRegistry::new();
-        reg.register(rust_backend());
-        reg.register(elixir_backend());
         let names = reg.list();
-        assert_eq!(names.len(), 2);
         assert!(names.contains(&"rust"));
-        assert!(names.contains(&"elixir"));
     }
 
     #[test]
-    fn registry_get_by_name() {
-        let mut reg = BackendRegistry::new();
-        reg.register(rust_backend());
+    fn registry_new_has_shell_backend() {
+        let reg = BackendRegistry::new();
+        let names = reg.list();
+        assert!(names.contains(&"shell"));
+    }
+
+    #[test]
+    fn registry_new_does_not_have_http_backend() {
+        let reg = BackendRegistry::new();
+        assert!(reg.get("http").is_none());
+    }
+
+    #[test]
+    fn registry_with_http_has_all_three() {
+        let mut config = HashMap::new();
+        config.insert("base_url".to_string(), "http://localhost:8080".to_string());
+        let reg = BackendRegistry::with_http_from_config(&config);
+        let names = reg.list();
+        assert!(names.contains(&"rust"));
+        assert!(names.contains(&"shell"));
+        assert!(names.contains(&"http"));
+        assert_eq!(names.len(), 3);
+    }
+
+    #[test]
+    fn registry_get_rust_by_name() {
+        let reg = BackendRegistry::new();
         let backend = reg.get("rust");
         assert!(backend.is_some());
         assert_eq!(backend.unwrap().name(), "rust");
     }
 
     #[test]
-    fn registry_get_unknown_returns_none() {
+    fn registry_get_shell_by_name() {
+        let reg = BackendRegistry::new();
+        let backend = reg.get("shell");
+        assert!(backend.is_some());
+        assert_eq!(backend.unwrap().name(), "shell");
+    }
+
+    // --- General registry behavior tests ---
+
+    #[test]
+    fn registry_register_additional_backend() {
         let mut reg = BackendRegistry::new();
-        reg.register(rust_backend());
+        reg.register(elixir_backend());
+        let names = reg.list();
+        assert!(names.contains(&"elixir"));
+        assert!(names.contains(&"rust"));
+        assert!(names.contains(&"shell"));
+    }
+
+    #[test]
+    fn registry_get_unknown_returns_none() {
+        let reg = BackendRegistry::new();
         assert!(reg.get("python").is_none());
     }
 
     #[test]
     fn registry_detect_rust_project() {
-        let mut reg = BackendRegistry::new();
-        reg.register(rust_backend());
+        let reg = BackendRegistry::new();
 
         // Our own project root has Cargo.toml
         let detected = reg.detect(Path::new(env!("CARGO_MANIFEST_DIR")));
@@ -168,8 +224,7 @@ mod tests {
 
     #[test]
     fn registry_detect_no_match_returns_none() {
-        let mut reg = BackendRegistry::new();
-        reg.register(rust_backend());
+        let reg = BackendRegistry::new();
 
         // /tmp is unlikely to have Cargo.toml
         assert!(reg.detect(Path::new("/tmp")).is_none());
@@ -178,6 +233,40 @@ mod tests {
     #[test]
     fn registry_default_matches_new() {
         let reg = BackendRegistry::default();
-        assert!(reg.list().is_empty());
+        let names = reg.list();
+        assert!(names.contains(&"rust"));
+        assert!(names.contains(&"shell"));
+    }
+
+    // --- Auto-detection priority tests ---
+
+    #[test]
+    fn auto_detect_rust_project() {
+        let reg = BackendRegistry::new();
+        // This project has Cargo.toml, so Rust should be detected first.
+        let detected = reg.detect(Path::new(env!("CARGO_MANIFEST_DIR")));
+        assert!(detected.is_some());
+        assert_eq!(detected.unwrap().name(), "rust");
+    }
+
+    #[test]
+    fn auto_detect_skips_shell() {
+        let reg = BackendRegistry::new();
+        // Shell never auto-detects (detect_project returns false).
+        // Even /tmp should not match shell.
+        let detected = reg.detect(Path::new("/tmp"));
+        assert!(detected.is_none());
+    }
+
+    #[test]
+    fn auto_detect_skips_http() {
+        let mut config = HashMap::new();
+        config.insert("base_url".to_string(), "http://localhost:8080".to_string());
+        let reg = BackendRegistry::with_http_from_config(&config);
+        // HTTP never auto-detects even when registered.
+        let detected = reg.detect(Path::new(env!("CARGO_MANIFEST_DIR")));
+        assert!(detected.is_some());
+        // Rust is detected, not HTTP.
+        assert_eq!(detected.unwrap().name(), "rust");
     }
 }

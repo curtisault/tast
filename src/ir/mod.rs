@@ -3,6 +3,8 @@ pub mod params;
 pub mod resolve;
 mod validate;
 
+use std::collections::HashMap;
+
 use crate::parser::ast;
 use crate::parser::error::ParseError;
 use crate::parser::extract::extract_data;
@@ -18,6 +20,7 @@ pub struct IrGraph {
     pub nodes: Vec<IrNode>,
     pub edges: Vec<IrEdge>,
     pub fixtures: Vec<fixture::IrFixture>,
+    pub config: HashMap<String, String>,
     pub span: Span,
 }
 
@@ -29,6 +32,7 @@ pub struct IrNode {
     pub steps: Vec<IrStep>,
     pub tags: Vec<String>,
     pub requires: Vec<String>,
+    pub config: HashMap<String, String>,
     pub span: Span,
 }
 
@@ -139,6 +143,16 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
                 .collect(),
             tags: n.tags.iter().map(|t| t.0.clone()).collect(),
             requires: n.requires.clone(),
+            config: n
+                .config
+                .as_ref()
+                .map(|c| {
+                    c.fields
+                        .iter()
+                        .map(|(k, v)| (k.clone(), format_value(v)))
+                        .collect()
+                })
+                .unwrap_or_default(),
             span: n.span,
         })
         .collect();
@@ -180,11 +194,23 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
         });
     }
 
+    let config = ast_graph
+        .config
+        .as_ref()
+        .map(|c| {
+            c.fields
+                .iter()
+                .map(|(k, v)| (k.clone(), format_value(v)))
+                .collect()
+        })
+        .unwrap_or_default();
+
     let ir = IrGraph {
         name: ast_graph.name.clone(),
         nodes,
         edges,
         fixtures,
+        config,
         span: ast_graph.span,
     };
 
@@ -710,5 +736,65 @@ mod tests {
         );
         let step = &ir.nodes[0].steps[0];
         assert!(step.data.iter().any(|(k, v)| k == "status" && v == "200"));
+    }
+
+    // --- Config preservation tests ---
+
+    #[test]
+    fn ir_preserves_graph_config() {
+        let ir = lower_one(
+            r#"graph G {
+                config {
+                    base_url: "http://localhost:3333"
+                    timeout: "10s"
+                }
+                node A {}
+            }"#,
+        );
+        assert_eq!(ir.config.get("base_url").unwrap(), "http://localhost:3333");
+        assert_eq!(ir.config.get("timeout").unwrap(), "10s");
+    }
+
+    #[test]
+    fn ir_preserves_node_config() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {
+                    config {
+                        retries: "3"
+                    }
+                }
+            }"#,
+        );
+        assert_eq!(ir.nodes[0].config.get("retries").unwrap(), "3");
+    }
+
+    #[test]
+    fn ir_empty_config_when_absent() {
+        let ir = lower_one(
+            r#"graph G {
+                node A {}
+            }"#,
+        );
+        assert!(ir.config.is_empty());
+        assert!(ir.nodes[0].config.is_empty());
+    }
+
+    #[test]
+    fn ir_config_multiple_fields() {
+        let ir = lower_one(
+            r#"graph G {
+                config {
+                    base_url: "http://localhost:8080"
+                    timeout: "30s"
+                    retries: "5"
+                }
+                node A {}
+            }"#,
+        );
+        assert_eq!(ir.config.len(), 3);
+        assert_eq!(ir.config.get("base_url").unwrap(), "http://localhost:8080");
+        assert_eq!(ir.config.get("timeout").unwrap(), "30s");
+        assert_eq!(ir.config.get("retries").unwrap(), "5");
     }
 }

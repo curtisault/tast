@@ -15,6 +15,8 @@ pub struct RunContext {
     pub working_dir: PathBuf,
     /// Whether to capture stdout/stderr or stream it live.
     pub capture_output: bool,
+    /// Graph-level config from the test plan.
+    pub graph_config: HashMap<String, String>,
 }
 
 impl RunContext {
@@ -25,6 +27,7 @@ impl RunContext {
             default_timeout: Duration::from_secs(60),
             working_dir: working_dir.into(),
             capture_output: true,
+            graph_config: HashMap::new(),
         }
     }
 

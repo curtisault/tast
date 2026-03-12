@@ -13,6 +13,7 @@ pub fn emit_yaml(plan: &TestPlan) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry};
+    use std::collections::HashMap;
 
     fn empty_plan() -> TestPlan {
         TestPlan {
@@ -22,6 +23,7 @@ mod tests {
                 nodes_total: 0,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps: vec![],
         }
     }
@@ -34,6 +36,7 @@ mod tests {
                 nodes_total: 1,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps: vec![PlanStep {
                 order: 1,
                 node: "A".into(),
@@ -60,6 +63,7 @@ mod tests {
                 }],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         }
     }
@@ -92,6 +96,7 @@ mod tests {
             assertions: vec![],
             inputs: vec![],
             outputs: vec![],
+            config: HashMap::new(),
         });
         plan.plan.nodes_total = 2;
         let yaml = emit_yaml(&plan).expect("emit failed");
@@ -137,6 +142,7 @@ mod tests {
                 nodes_total: 2,
                 edges_total: 1,
             },
+            config: HashMap::new(),
             steps: vec![
                 PlanStep {
                     order: 1,
@@ -149,6 +155,7 @@ mod tests {
                     assertions: vec![],
                     inputs: vec![],
                     outputs: vec!["token".into()],
+                    config: HashMap::new(),
                 },
                 PlanStep {
                     order: 2,
@@ -164,6 +171,7 @@ mod tests {
                         from: "A".into(),
                     }],
                     outputs: vec![],
+                    config: HashMap::new(),
                 },
             ],
         };
@@ -182,6 +190,7 @@ mod tests {
                 nodes_total: 2,
                 edges_total: 1,
             },
+            config: HashMap::new(),
             steps: vec![PlanStep {
                 order: 1,
                 node: "B".into(),
@@ -193,6 +202,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         };
         let yaml = emit_yaml(&plan).expect("emit failed");
@@ -230,6 +240,7 @@ mod tests {
                 nodes_total: 1,
                 edges_total: 0,
             },
+            config: HashMap::new(),
             steps: vec![PlanStep {
                 order: 1,
                 node: "A".into(),
@@ -250,6 +261,7 @@ mod tests {
                 assertions: vec![],
                 inputs: vec![],
                 outputs: vec![],
+                config: HashMap::new(),
             }],
         };
         let yaml = emit_yaml(&plan).expect("emit failed");

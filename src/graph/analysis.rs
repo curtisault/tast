@@ -98,6 +98,7 @@ mod tests {
     use crate::ir::{IrEdge, IrGraph, IrNode, lower};
     use crate::parser::parse::parse;
     use crate::util::span::Span;
+    use std::collections::HashMap;
 
     fn build_one(input: &str) -> TestGraph {
         let graphs = parse(input).expect("parse failed");
@@ -118,6 +119,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 IrNode {
@@ -126,6 +128,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
             ],
@@ -150,6 +153,7 @@ mod tests {
                 },
             ],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -227,6 +231,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 IrNode {
@@ -235,6 +240,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
             ],
@@ -259,6 +265,7 @@ mod tests {
                 },
             ],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -280,6 +287,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 IrNode {
@@ -288,6 +296,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
                 IrNode {
@@ -296,6 +305,7 @@ mod tests {
                     steps: vec![],
                     tags: vec![],
                     requires: vec![],
+                    config: HashMap::new(),
                     span: Span::default(),
                 },
             ],
@@ -329,6 +339,7 @@ mod tests {
                 },
             ],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let tg = build(&ir);
@@ -348,6 +359,7 @@ mod tests {
                 steps: vec![],
                 tags: vec![],
                 requires: vec![],
+                config: HashMap::new(),
                 span: Span::default(),
             }],
             edges: vec![IrEdge {
@@ -360,6 +372,7 @@ mod tests {
                 span: Span::default(),
             }],
             fixtures: vec![],
+            config: HashMap::new(),
             span: Span::default(),
         };
         let tg = build(&ir);
