@@ -2,7 +2,21 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use tast::cli::commands::{self, PlanOptions, RunOptions};
+use tast::cli::commands::{self, CliError, PlanOptions, RunOptions};
+use tast::util::diagnostics::eprint_parse_error;
+
+/// Handle a `CliError` by printing a diagnostic and exiting.
+fn handle_error(e: CliError) -> ! {
+    match e {
+        CliError::Parse {
+            filename,
+            source,
+            error,
+        } => eprint_parse_error(&filename, &source, &error),
+        CliError::General(msg) => eprintln!("error: {msg}"),
+    }
+    std::process::exit(1);
+}
 
 #[derive(Parser)]
 #[command(name = "tast", about = "TAST — Test Abstract Syntax Tree", version)]
@@ -146,10 +160,7 @@ fn main() {
             };
             match commands::run_plan(&files, &options) {
                 Ok(result) => print!("{result}"),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+                Err(e) => handle_error(e),
             }
         }
         Some(Commands::Visualize {
@@ -163,10 +174,7 @@ fn main() {
             }
             match commands::run_visualize(&files, &format, output.as_ref()) {
                 Ok(result) => print!("{result}"),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+                Err(e) => handle_error(e),
             }
         }
         Some(Commands::List { what, files }) => {
@@ -176,10 +184,7 @@ fn main() {
             }
             match commands::run_list(&what, &files) {
                 Ok(result) => print!("{result}"),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+                Err(e) => handle_error(e),
             }
         }
         Some(Commands::Run {
@@ -218,10 +223,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+                Err(e) => handle_error(e),
             }
         }
         Some(Commands::Validate { files }) => {
@@ -231,10 +233,7 @@ fn main() {
             }
             match commands::run_validate(&files) {
                 Ok(result) => println!("{result}"),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
+                Err(e) => handle_error(e),
             }
         }
         None => {

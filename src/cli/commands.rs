@@ -12,12 +12,46 @@ use crate::graph::traversal::{TraversalStrategy, extract_subgraph, shortest_path
 use crate::ir::resolve::{ImportResolver, resolve_cross_graph_edges};
 use crate::ir::{IrGraph, lower};
 use crate::parser::ast;
+use crate::parser::error::ParseError;
 use crate::parser::parse::parse;
 use crate::plan::compiler::compile_with_strategy;
 use crate::plan::filter::{filter_plan, parse_filter};
 use crate::runner::executor::{RunConfig, TestRunner};
 use crate::runner::registry::BackendRegistry;
 use crate::runner::report::to_report;
+
+/// Structured error type for CLI commands.
+///
+/// Preserves parse errors with source context for rich diagnostic rendering,
+/// while wrapping other errors as plain strings.
+#[derive(Debug)]
+pub enum CliError {
+    /// A parse or validation error with source text available for diagnostics.
+    Parse {
+        filename: String,
+        source: String,
+        error: ParseError,
+    },
+    /// An unstructured error (I/O, runtime, configuration, etc.).
+    General(String),
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Parse {
+                filename, error, ..
+            } => write!(f, "{}:{}", filename, error),
+            CliError::General(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl From<String> for CliError {
+    fn from(s: String) -> Self {
+        CliError::General(s)
+    }
+}
 
 /// Options for the `plan` command.
 pub struct PlanOptions {
@@ -56,17 +90,22 @@ impl Default for PlanOptions {
 }
 
 /// Lower an AST graph with import resolution.
-fn lower_with_imports(graph: &ast::Graph, file: &Path) -> Result<IrGraph, String> {
-    let mut ir = lower(graph).map_err(|e| format!("{}:{}", file.display(), e))?;
+fn lower_with_imports(graph: &ast::Graph, file: &Path, source: &str) -> Result<IrGraph, CliError> {
+    let filename = file.display().to_string();
+    let mut ir = lower(graph).map_err(|error| CliError::Parse {
+        filename: filename.clone(),
+        source: source.to_owned(),
+        error,
+    })?;
 
     if !graph.imports.is_empty() {
         let base_dir = file.parent().unwrap_or(Path::new("."));
         let mut resolver = ImportResolver::new(base_dir);
         let resolved = resolver
             .resolve_imports(&graph.imports)
-            .map_err(|e| format!("{}:{}", file.display(), e))?;
+            .map_err(|e| CliError::General(format!("{}:{}", filename, e)))?;
         resolve_cross_graph_edges(&mut ir, &resolved)
-            .map_err(|e| format!("{}:{}", file.display(), e))?;
+            .map_err(|e| CliError::General(format!("{}:{}", filename, e)))?;
     }
 
     Ok(ir)
@@ -77,7 +116,7 @@ fn lower_with_imports(graph: &ast::Graph, file: &Path) -> Result<IrGraph, String
 /// # Errors
 ///
 /// Returns an error string if parsing, lowering, building, compiling, or emitting fails.
-pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, String> {
+pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, CliError> {
     let strategy = options.parse_strategy()?;
     let mut all_yaml = String::new();
 
@@ -85,10 +124,15 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, Stri
         let input = std::fs::read_to_string(file)
             .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
 
-        let graphs = parse(&input).map_err(|e| format!("{}:{}", file.display(), e))?;
+        let filename = file.display().to_string();
+        let graphs = parse(&input).map_err(|error| CliError::Parse {
+            filename: filename.clone(),
+            source: input.clone(),
+            error,
+        })?;
 
         for graph in &graphs {
-            let ir = lower_with_imports(graph, file)?;
+            let ir = lower_with_imports(graph, file, &input)?;
             let mut tg = build(&ir);
 
             // Handle --from/--to path query
@@ -97,7 +141,7 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, Stri
                     .map_err(|e| format!("{}:{}", file.display(), e))?;
                 tg = extract_subgraph(&tg, &path);
             } else if options.from.is_some() || options.to.is_some() {
-                return Err("--from and --to must be used together".to_owned());
+                return Err("--from and --to must be used together".to_owned().into());
             }
 
             let mut plan = compile_with_strategy(&tg, strategy)
@@ -116,7 +160,8 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, Stri
                 other => {
                     return Err(format!(
                         "unknown format '{other}' (expected: yaml, markdown, junit)"
-                    ));
+                    )
+                    .into());
                 }
             };
             all_yaml.push_str(&output);
@@ -137,29 +182,29 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, Stri
 /// # Errors
 ///
 /// Returns an error string if parsing or validation fails.
-pub fn run_validate(files: &[PathBuf]) -> Result<String, String> {
+pub fn run_validate(files: &[PathBuf]) -> Result<String, CliError> {
     let mut results = Vec::new();
 
     for file in files {
         let input = std::fs::read_to_string(file)
             .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
 
-        match parse(&input) {
-            Ok(graphs) => {
-                for graph in &graphs {
-                    let ir = lower_with_imports(graph, file)?;
-                    results.push(format!(
-                        "{}: {} is valid ({} nodes, {} edges)",
-                        file.display(),
-                        ir.name,
-                        ir.nodes.len(),
-                        ir.edges.len(),
-                    ));
-                }
-            }
-            Err(e) => {
-                return Err(format!("{}:{}", file.display(), e));
-            }
+        let filename = file.display().to_string();
+        let graphs = parse(&input).map_err(|error| CliError::Parse {
+            filename: filename.clone(),
+            source: input.clone(),
+            error,
+        })?;
+
+        for graph in &graphs {
+            let ir = lower_with_imports(graph, file, &input)?;
+            results.push(format!(
+                "{}: {} is valid ({} nodes, {} edges)",
+                file.display(),
+                ir.name,
+                ir.nodes.len(),
+                ir.edges.len(),
+            ));
         }
     }
 
@@ -175,23 +220,30 @@ pub fn run_visualize(
     files: &[PathBuf],
     format: &str,
     output: Option<&PathBuf>,
-) -> Result<String, String> {
+) -> Result<String, CliError> {
     let mut all_output = String::new();
 
     for file in files {
         let input = std::fs::read_to_string(file)
             .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
 
-        let graphs = parse(&input).map_err(|e| format!("{}:{}", file.display(), e))?;
+        let filename = file.display().to_string();
+        let graphs = parse(&input).map_err(|error| CliError::Parse {
+            filename: filename.clone(),
+            source: input.clone(),
+            error,
+        })?;
 
         for graph in &graphs {
-            let ir = lower_with_imports(graph, file)?;
+            let ir = lower_with_imports(graph, file, &input)?;
             let tg = build(&ir);
 
             let diagram = match format {
                 "dot" => emit_dot(&tg),
                 "mermaid" => emit_mermaid(&tg),
-                other => return Err(format!("unknown format '{other}' (expected: dot, mermaid)")),
+                other => {
+                    return Err(format!("unknown format '{other}' (expected: dot, mermaid)").into());
+                }
             };
             all_output.push_str(&diagram);
         }
@@ -211,17 +263,22 @@ pub fn run_visualize(
 /// # Errors
 ///
 /// Returns an error string if parsing or lowering fails, or if `what` is invalid.
-pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, String> {
+pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, CliError> {
     let mut lines = Vec::new();
 
     for file in files {
         let input = std::fs::read_to_string(file)
             .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
 
-        let graphs = parse(&input).map_err(|e| format!("{}:{}", file.display(), e))?;
+        let filename = file.display().to_string();
+        let graphs = parse(&input).map_err(|error| CliError::Parse {
+            filename: filename.clone(),
+            source: input.clone(),
+            error,
+        })?;
 
         for graph in &graphs {
-            let ir = lower_with_imports(graph, file)?;
+            let ir = lower_with_imports(graph, file, &input)?;
             let tg = build(&ir);
 
             match what {
@@ -277,7 +334,8 @@ pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, String> {
                 other => {
                     return Err(format!(
                         "unknown list target '{other}' (expected: nodes, edges, tags, fixtures)"
-                    ));
+                    )
+                    .into());
                 }
             }
         }
@@ -308,15 +366,15 @@ pub struct RunOptions {
 /// # Errors
 ///
 /// Returns an error string if parsing, compilation, or execution fails.
-pub fn run_run(options: RunOptions) -> Result<bool, String> {
+pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
     let strategy = match options.strategy.as_str() {
         "topological" => TraversalStrategy::Topological,
         "dfs" => TraversalStrategy::DepthFirst,
         "bfs" => TraversalStrategy::BreadthFirst,
         other => {
-            return Err(format!(
-                "unknown strategy '{other}' (expected: topological, dfs, bfs)"
-            ));
+            return Err(
+                format!("unknown strategy '{other}' (expected: topological, dfs, bfs)").into(),
+            );
         }
     };
 
@@ -327,14 +385,17 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
         && options.backend.as_deref() != Some("http")
         && options.backend.is_some()
     {
-        return Err("--base-url can only be used with --backend http".to_owned());
+        return Err("--base-url can only be used with --backend http"
+            .to_owned()
+            .into());
     }
 
     // Require --base-url when --backend http is explicitly selected.
     if options.backend.as_deref() == Some("http") && options.base_url.is_none() {
         return Err(
             "--backend http requires --base-url (e.g., --base-url http://localhost:3000)"
-                .to_owned(),
+                .to_owned()
+                .into(),
         );
     }
 
@@ -364,10 +425,15 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
         let input = std::fs::read_to_string(file)
             .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
 
-        let graphs = parse(&input).map_err(|e| format!("{}:{}", file.display(), e))?;
+        let filename = file.display().to_string();
+        let graphs = parse(&input).map_err(|error| CliError::Parse {
+            filename: filename.clone(),
+            source: input.clone(),
+            error,
+        })?;
 
         for graph in &graphs {
-            let ir = lower_with_imports(graph, file)?;
+            let ir = lower_with_imports(graph, file, &input)?;
             let tg = build(&ir);
 
             let mut plan = compile_with_strategy(&tg, strategy)
@@ -389,9 +455,9 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
                 "json" => emit_run_json(&report),
                 "junit" | "xml" => emit_run_junit(&report),
                 other => {
-                    return Err(format!(
-                        "unknown format '{other}' (expected: yaml, json, junit)"
-                    ));
+                    return Err(
+                        format!("unknown format '{other}' (expected: yaml, json, junit)").into(),
+                    );
                 }
             };
 
@@ -410,4 +476,68 @@ pub fn run_run(options: RunOptions) -> Result<bool, String> {
     }
 
     Ok(all_success)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::span::Span;
+
+    #[test]
+    fn cli_error_preserves_parse_error_span() {
+        let error = ParseError {
+            message: "unexpected token".to_string(),
+            span: Span::new(10, 15, 2, 3),
+        };
+        let cli_err = CliError::Parse {
+            filename: "test.tast".to_string(),
+            source: "graph G {\nfoo bar".to_string(),
+            error,
+        };
+        match &cli_err {
+            CliError::Parse {
+                error,
+                source,
+                filename,
+                ..
+            } => {
+                assert_eq!(error.span.start, 10);
+                assert_eq!(error.span.end, 15);
+                assert_eq!(error.span.line, 2);
+                assert_eq!(error.message, "unexpected token");
+                assert_eq!(filename, "test.tast");
+                assert!(source.contains("foo bar"));
+            }
+            CliError::General(_) => panic!("expected Parse variant"),
+        }
+    }
+
+    #[test]
+    fn cli_error_general_from_string() {
+        let cli_err: CliError = "something went wrong".to_owned().into();
+        match &cli_err {
+            CliError::General(msg) => assert_eq!(msg, "something went wrong"),
+            CliError::Parse { .. } => panic!("expected General variant"),
+        }
+    }
+
+    #[test]
+    fn cli_error_display_fallback() {
+        let parse_err = CliError::Parse {
+            filename: "foo.tast".to_string(),
+            source: String::new(),
+            error: ParseError {
+                message: "bad syntax".to_string(),
+                span: Span::new(0, 1, 1, 1),
+            },
+        };
+        let general_err: CliError = "io error".to_owned().into();
+
+        let parse_display = parse_err.to_string();
+        assert!(parse_display.contains("foo.tast"));
+        assert!(parse_display.contains("bad syntax"));
+
+        let general_display = general_err.to_string();
+        assert_eq!(general_display, "io error");
+    }
 }
