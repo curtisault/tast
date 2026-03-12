@@ -251,83 +251,84 @@ graph OrderFlow {
 ```
 src/
 ├── main.rs                  # CLI entrypoint (clap)
+├── lib.rs                   # Library root, module declarations
 ├── cli/
 │   ├── mod.rs
-│   ├── commands.rs          # plan, run, validate, visualize, init
-│   └── config.rs            # CLI config, .tastrc, env vars
+│   └── commands.rs          # plan, run, validate, visualize subcommands
 ├── parser/
 │   ├── mod.rs
 │   ├── lexer.rs             # Tokenizer (keywords, NL phrases, data literals)
 │   ├── ast.rs               # AST node types
-│   ├── grammar.rs           # Grammar rules (Pest PEG or hand-rolled)
-│   ├── parser.rs            # .tast file → AST
-│   └── error.rs             # Parser error types with span info
+│   ├── parse.rs             # Recursive descent parser (.tast → AST)
+│   ├── error.rs             # Parser error types with span info
+│   ├── extract.rs           # Data extraction from parsed tokens
+│   └── normalize.rs         # AST normalization passes
 ├── ir/
-│   ├── mod.rs
-│   ├── graph.rs             # IR graph representation
-│   ├── node.rs              # IR node (scenario, fixture, config)
-│   ├── edge.rs              # IR edge (data flow, dependency)
-│   ├── step.rs              # Given/When/Then step IR
+│   ├── mod.rs               # IR types and lowering (AST → IR)
+│   ├── fixture.rs           # Fixture definitions and expansion
+│   ├── params.rs            # Parameter and data type handling
 │   ├── resolve.rs           # Name resolution, import resolution
 │   └── validate.rs          # Semantic validation (cycles, missing data, etc.)
 ├── graph/
 │   ├── mod.rs
 │   ├── builder.rs           # IR → petgraph construction
 │   ├── traversal.rs         # DFS, BFS, topological, filtered walks
-│   ├── query.rs             # Path finding, subgraph extraction
 │   └── analysis.rs          # Cycle detection, reachability, coverage
 ├── plan/
 │   ├── mod.rs
 │   ├── compiler.rs          # Traversal → ordered test plan
-│   ├── plan.rs              # Test plan data structure
+│   ├── types.rs             # Test plan data structures
 │   └── filter.rs            # Tag-based, node-based filtering
 ├── emit/
 │   ├── mod.rs
 │   ├── yaml.rs              # YAML output (default)
-│   ├── json.rs              # JSON output
+│   ├── test_plans.rs        # Plan-specific emission helpers
 │   ├── markdown.rs          # Human-readable Markdown
-│   └── junit.rs             # JUnit XML (CI integration)
+│   ├── junit.rs             # JUnit XML (CI integration)
+│   ├── dot.rs               # Graphviz DOT output
+│   ├── mermaid.rs           # Mermaid diagram output
+│   ├── run_result.rs        # Run result emission (YAML, JSON, JUnit)
+│   └── util.rs              # Shared emission utilities
 ├── runner/
 │   ├── mod.rs
 │   ├── executor.rs          # Test plan executor (orchestrator)
-│   ├── backend.rs           # Backend trait
+│   ├── backend.rs           # Backend trait definition
+│   ├── registry.rs          # Backend registry and auto-detection
+│   ├── context.rs           # Run context (data passing between steps)
+│   ├── result.rs            # Step/run result types
+│   ├── report.rs            # Run reporting
+│   ├── display.rs           # Terminal display for run progress
 │   └── backends/
 │       ├── mod.rs
-│       ├── rust.rs           # Rust backend (cargo test)
-│       ├── shell.rs          # Generic shell command backend
-│       ├── http.rs           # REST/GraphQL API testing backend
-│       ├── beam/
-│       │   ├── mod.rs        # Shared BEAM adapter (Elixir, Gleam, Erlang)
-│       │   ├── elixir.rs     # mix test integration
-│       │   ├── gleam.rs      # gleam test integration
-│       │   └── erlang.rs     # rebar3 integration
-│       ├── jvm/
-│       │   ├── mod.rs        # Shared JVM adapter (Clojure, Scala)
-│       │   ├── clojure.rs    # lein test / deps.edn integration
-│       │   └── scala.rs      # sbt test integration
-│       ├── haskell.rs        # cabal test / stack test
-│       ├── ocaml.rs          # dune test
-│       ├── go.rs             # go test
-│       └── typescript.rs     # vitest / jest / playwright
+│       ├── http_pattern.rs   # HTTP pattern detection in step text
+│       ├── rust/
+│       │   ├── mod.rs        # Rust backend (cargo test harness generation)
+│       │   ├── discover.rs   # Convention-based step function discovery
+│       │   ├── resolve.rs    # Binding resolution (steps → functions)
+│       │   ├── mapping.rs    # Step-to-code mapping
+│       │   └── output.rs     # Output extraction from test runs
+│       ├── shell/
+│       │   ├── mod.rs        # Shell backend (subprocess execution)
+│       │   └── script.rs     # Shell script generation from steps
+│       └── http/
+│           ├── mod.rs        # HTTP backend (direct API testing)
+│           ├── request.rs    # HTTP request builder
+│           └── response.rs   # Response assertion evaluation
 └── util/
     ├── mod.rs
-    ├── span.rs              # Source span tracking for errors
-    └── diagnostics.rs       # Pretty error reporting (miette/ariadne)
+    └── span.rs              # Source span tracking for errors
 ```
 
-### 3.3 Key Dependencies (Planned)
+### 3.3 Key Dependencies
 
 | Crate | Purpose |
 |-------|---------|
 | `clap` | CLI argument parsing with derive |
-| `pest` (or hand-rolled) | PEG parser for the DSL grammar |
 | `petgraph` | Graph data structure, traversals, algorithms |
 | `serde` + `serde_yaml` | Serialization for YAML output |
 | `serde_json` | JSON output |
-| `miette` or `ariadne` | Rich diagnostic error reporting with source spans |
-| `toml` | Config file parsing (`.tastrc.toml`) |
-| `colored` / `owo-colors` | Terminal coloring |
-| `similar` | Diffing for snapshot-style test comparison |
+| `ureq` | Blocking HTTP client for the HTTP backend |
+| `tempfile` | Temporary directories for harness generation |
 
 ---
 
