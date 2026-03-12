@@ -4,4 +4,5 @@ pub mod graph;
 pub mod ir;
 pub mod parser;
 pub mod plan;
+pub mod runner;
 pub mod util;

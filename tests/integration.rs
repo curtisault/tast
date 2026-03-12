@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use tast::cli::commands::{PlanOptions, run_list, run_plan, run_validate, run_visualize};
+use tast::cli::commands::{
+    PlanOptions, RunOptions, run_list, run_plan, run_run, run_validate, run_visualize,
+};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -383,4 +385,72 @@ fn cli_plan_format_junit_valid_xml() {
     assert!(output.contains("</testcase>"));
     assert!(output.contains("</testsuite>"));
     assert!(output.contains("</testsuites>"));
+}
+
+// ── Run command: backend selection tests ─────────────────────────────────
+
+fn run_opts_with_backend(backend: &str) -> RunOptions {
+    RunOptions {
+        files: vec![fixture("single_node.tast")],
+        backend: Some(backend.to_string()),
+        format: "yaml".to_string(),
+        output: None,
+        filter: None,
+        parallel: 1,
+        timeout: 10,
+        fail_fast: false,
+        keep_harness: false,
+        strategy: "topological".to_string(),
+        base_url: None,
+    }
+}
+
+#[test]
+fn cli_run_backend_http_requires_base_url() {
+    let opts = run_opts_with_backend("http");
+    let err = run_run(opts).unwrap_err();
+    assert!(
+        err.contains("--base-url"),
+        "expected error about --base-url, got: {err}"
+    );
+}
+
+#[test]
+fn cli_run_backend_http_with_base_url_accepted() {
+    let mut opts = run_opts_with_backend("http");
+    // Use a non-routable address so the HTTP request itself fails,
+    // but the backend selection and configuration should succeed.
+    opts.base_url = Some("http://192.0.2.1:1".to_string());
+    // This will either succeed (all steps skipped/failed) or return a run error.
+    // The key assertion is that it does NOT return the "--base-url required" error.
+    let result = run_run(opts);
+    match result {
+        Ok(_) => {} // Backend was accepted, run completed (steps may have failed)
+        Err(e) => {
+            assert!(
+                !e.contains("--base-url"),
+                "should not get base-url error when --base-url is provided, got: {e}"
+            );
+        }
+    }
+}
+
+#[test]
+fn cli_run_backend_shell_explicit() {
+    let opts = run_opts_with_backend("shell");
+    // Shell backend should be selectable without --base-url.
+    let result = run_run(opts);
+    // Should succeed — shell generates scripts and runs them (steps may pass or fail).
+    assert!(result.is_ok(), "shell backend should be accepted");
+}
+
+#[test]
+fn cli_run_base_url_rejected_for_non_http_backend() {
+    let mut opts = run_opts_with_backend("rust");
+    opts.base_url = Some("http://localhost:3000".to_string());
+    let err = run_run(opts).unwrap_err();
+    assert!(
+        err.contains("--base-url can only be used with --backend http"),
+        "got: {err}"
+    );
 }

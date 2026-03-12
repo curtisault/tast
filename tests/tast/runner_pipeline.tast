@@ -1,0 +1,55 @@
+# Runner Pipeline — self-validation for Phase 4 test runner
+#
+# This .tast file describes the runner's own pipeline:
+# parse → compile → execute → collect results.
+
+graph RunnerPipeline {
+
+  node ParseTestFile {
+    describe "Parse a .tast file into an AST"
+
+    given a valid .tast file
+    when the parser processes the file
+    then an AST is produced without errors
+  }
+
+  node CompilePlan {
+    describe "Compile the AST into a test plan"
+
+    given a valid AST
+    when the plan compiler runs
+    then a TestPlan is produced with ordered steps
+  }
+
+  node ExecutePlan {
+    describe "Execute the test plan with the Rust backend"
+
+    given a compiled TestPlan
+    and a Rust project with matching test implementations
+    when the runner executes the plan
+    then each step produces a StepResult
+  }
+
+  node CollectResults {
+    describe "Collect and report test results"
+
+    given completed step results
+    when the runner aggregates results
+    then a TestRunResult is produced with accurate summary
+  }
+
+  ParseTestFile -> CompilePlan {
+    passes { ast }
+    describe "AST flows to plan compiler"
+  }
+
+  CompilePlan -> ExecutePlan {
+    passes { plan }
+    describe "Plan flows to runner"
+  }
+
+  ExecutePlan -> CollectResults {
+    passes { step_results }
+    describe "Step results flow to reporter"
+  }
+}

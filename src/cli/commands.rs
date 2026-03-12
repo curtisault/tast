@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::emit::dot::emit_dot;
 use crate::emit::junit::emit_junit;
 use crate::emit::markdown::emit_markdown;
 use crate::emit::mermaid::emit_mermaid;
+use crate::emit::run_result::{emit_run_json, emit_run_junit, emit_run_yaml};
 use crate::emit::yaml::emit_yaml;
 use crate::graph::builder::build;
 use crate::graph::traversal::{TraversalStrategy, extract_subgraph, shortest_path};
@@ -13,6 +15,9 @@ use crate::parser::ast;
 use crate::parser::parse::parse;
 use crate::plan::compiler::compile_with_strategy;
 use crate::plan::filter::{filter_plan, parse_filter};
+use crate::runner::executor::{RunConfig, TestRunner};
+use crate::runner::registry::BackendRegistry;
+use crate::runner::report::to_report;
 
 /// Options for the `plan` command.
 pub struct PlanOptions {
@@ -279,4 +284,130 @@ pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, String> {
     }
 
     Ok(lines.join("\n") + "\n")
+}
+
+/// Options for the `run` command.
+pub struct RunOptions {
+    pub files: Vec<PathBuf>,
+    pub backend: Option<String>,
+    pub format: String,
+    pub output: Option<PathBuf>,
+    pub filter: Option<String>,
+    pub parallel: usize,
+    pub timeout: u64,
+    pub fail_fast: bool,
+    pub keep_harness: bool,
+    pub strategy: String,
+    pub base_url: Option<String>,
+}
+
+/// Run the `run` command: parse .tast files, execute tests, and emit results.
+///
+/// Returns `Ok(true)` if all tests passed, `Ok(false)` if any failed.
+///
+/// # Errors
+///
+/// Returns an error string if parsing, compilation, or execution fails.
+pub fn run_run(options: RunOptions) -> Result<bool, String> {
+    let strategy = match options.strategy.as_str() {
+        "topological" => TraversalStrategy::Topological,
+        "dfs" => TraversalStrategy::DepthFirst,
+        "bfs" => TraversalStrategy::BreadthFirst,
+        other => {
+            return Err(format!(
+                "unknown strategy '{other}' (expected: topological, dfs, bfs)"
+            ));
+        }
+    };
+
+    let working_dir = std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
+
+    // Validate --base-url usage.
+    if options.base_url.is_some()
+        && options.backend.as_deref() != Some("http")
+        && options.backend.is_some()
+    {
+        return Err("--base-url can only be used with --backend http".to_owned());
+    }
+
+    // Require --base-url when --backend http is explicitly selected.
+    if options.backend.as_deref() == Some("http") && options.base_url.is_none() {
+        return Err(
+            "--backend http requires --base-url (e.g., --base-url http://localhost:3000)"
+                .to_owned(),
+        );
+    }
+
+    let config = RunConfig {
+        backend_name: options.backend,
+        timeout: Duration::from_secs(options.timeout),
+        parallel: options.parallel,
+        fail_fast: options.fail_fast,
+        capture_output: true,
+        working_dir,
+        clean_harness: !options.keep_harness,
+    };
+
+    // Build the registry: include HTTP backend if --base-url was provided.
+    let registry = if let Some(base_url) = &options.base_url {
+        let mut http_config = std::collections::HashMap::new();
+        http_config.insert("base_url".to_string(), base_url.clone());
+        BackendRegistry::with_http_from_config(&http_config)
+    } else {
+        BackendRegistry::new()
+    };
+
+    let runner = TestRunner::with_registry(config, registry);
+    let mut all_success = true;
+
+    for file in &options.files {
+        let input = std::fs::read_to_string(file)
+            .map_err(|e| format!("failed to read {}: {e}", file.display()))?;
+
+        let graphs = parse(&input).map_err(|e| format!("{}:{}", file.display(), e))?;
+
+        for graph in &graphs {
+            let ir = lower_with_imports(graph, file)?;
+            let tg = build(&ir);
+
+            let mut plan = compile_with_strategy(&tg, strategy)
+                .map_err(|e| format!("{}:{}", file.display(), e))?;
+
+            if let Some(filter_str) = &options.filter {
+                let predicate = parse_filter(filter_str)?;
+                plan = filter_plan(&plan, &predicate);
+            }
+
+            let result = runner
+                .run(&plan)
+                .map_err(|e| format!("run error: {}", e.message))?;
+
+            let report = to_report(&result, &plan.plan);
+
+            let output_str = match options.format.as_str() {
+                "yaml" => emit_run_yaml(&report),
+                "json" => emit_run_json(&report),
+                "junit" | "xml" => emit_run_junit(&report),
+                other => {
+                    return Err(format!(
+                        "unknown format '{other}' (expected: yaml, json, junit)"
+                    ));
+                }
+            };
+
+            if let Some(out_path) = &options.output {
+                std::fs::write(out_path, &output_str)
+                    .map_err(|e| format!("failed to write {}: {e}", out_path.display()))?;
+                eprintln!("results written to {}", out_path.display());
+            } else {
+                print!("{output_str}");
+            }
+
+            if !result.summary.success() {
+                all_success = false;
+            }
+        }
+    }
+
+    Ok(all_success)
 }

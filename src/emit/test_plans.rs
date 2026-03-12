@@ -2,6 +2,8 @@
 ///
 /// These build `TestPlan` values that are rich enough (tags, data, inputs,
 /// outputs, descriptions) for every emitter's test suite to use.
+use std::collections::HashMap;
+
 use crate::plan::types::{InputEntry, PlanMetadata, PlanStep, StepEntry, TestPlan};
 
 pub fn empty_plan() -> TestPlan {
@@ -12,6 +14,7 @@ pub fn empty_plan() -> TestPlan {
             nodes_total: 0,
             edges_total: 0,
         },
+        config: HashMap::new(),
         steps: vec![],
     }
 }
@@ -24,6 +27,7 @@ pub fn single_step_plan() -> TestPlan {
             nodes_total: 1,
             edges_total: 0,
         },
+        config: HashMap::new(),
         steps: vec![PlanStep {
             order: 1,
             node: "Login".into(),
@@ -50,6 +54,7 @@ pub fn single_step_plan() -> TestPlan {
             }],
             inputs: vec![],
             outputs: vec!["auth_token".into()],
+            config: HashMap::new(),
         }],
     }
 }
@@ -62,6 +67,7 @@ pub fn multi_step_plan() -> TestPlan {
             nodes_total: 2,
             edges_total: 1,
         },
+        config: HashMap::new(),
         steps: vec![
             PlanStep {
                 order: 1,
@@ -84,6 +90,7 @@ pub fn multi_step_plan() -> TestPlan {
                 }],
                 inputs: vec![],
                 outputs: vec!["user_id".into()],
+                config: HashMap::new(),
             },
             PlanStep {
                 order: 2,
@@ -104,6 +111,7 @@ pub fn multi_step_plan() -> TestPlan {
                     from: "Register".into(),
                 }],
                 outputs: vec![],
+                config: HashMap::new(),
             },
         ],
     }
