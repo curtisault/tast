@@ -68,6 +68,8 @@ pub fn validate_fixtures(fixtures: &[IrFixture]) -> Result<(), ParseError> {
             return Err(ParseError {
                 message: format!("duplicate fixture name '{}'", f.name),
                 span: Span::default(),
+                secondary: vec![],
+                help: None,
             });
         }
     }

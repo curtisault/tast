@@ -1,0 +1,13 @@
+graph OrderFlow {
+  node PlaceOrder {
+    describe "User places a new order"
+    given an authenticated user
+    when the user submits the order form
+    then the order is created
+  }
+
+  PlaceOrder -> ConfirmPayment {
+    passes { order_id }
+    describe "Order flows to payment"
+  }
+}

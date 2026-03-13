@@ -1,0 +1,15 @@
+graph Pipeline {
+  node ProcessData {
+    describe "First processing step"
+    given raw input data
+    when the processor runs
+    then cleaned data is produced
+  }
+
+  node ProcessData {
+    describe "Oops, duplicate name"
+    given some other data
+    when something happens
+    then results appear
+  }
+}

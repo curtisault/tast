@@ -1,0 +1,9 @@
+graph TestSuite {
+  node ValidStep {
+    describe "This one is fine"
+  }
+
+  42 -> ValidStep {
+    describe "numbers can't be node names"
+  }
+}

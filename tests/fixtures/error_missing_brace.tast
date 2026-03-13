@@ -1,0 +1,11 @@
+graph UserAuth {
+  node Login {
+    describe "User logs in with credentials"
+    given a registered user
+    when the user submits valid credentials
+    then an auth token is returned
+
+  node Logout {
+    describe "User logs out"
+  }
+}

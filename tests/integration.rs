@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use tast::cli::commands::{
-    PlanOptions, RunOptions, run_list, run_plan, run_run, run_validate, run_visualize,
+    CliError, PlanOptions, RunOptions, run_list, run_plan, run_run, run_validate, run_visualize,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -93,7 +93,8 @@ fn cli_validate_reports_missing_node_ref() {
     let result = run_validate(&[fixture("missing_node_ref.tast")]);
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.contains("unknown node"), "got: {err}");
+    let msg = err.to_string();
+    assert!(msg.contains("unknown node"), "got: {msg}");
 }
 
 #[test]
@@ -111,7 +112,8 @@ fn cli_plan_detects_cycle() {
     let result = run_plan(&[fixture("cycle.tast")], &default_opts());
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(err.contains("cycle"), "got: {err}");
+    let msg = err.to_string();
+    assert!(msg.contains("cycle"), "got: {msg}");
 }
 
 // ── B7: Plan with strategy/filter/from-to ──────────────────
@@ -176,11 +178,8 @@ fn cli_plan_with_from_only() {
     };
     let result = run_plan(&[fixture("full_auth.tast")], &opts);
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("--from and --to must be used together")
-    );
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("--from and --to must be used together"));
 }
 
 // ── B8: Visualize command ──────────────────────────────────
@@ -250,7 +249,12 @@ fn list_tags_unique() {
 fn list_invalid_what_errors() {
     let result = run_list("foobar", &[fixture("full_auth.tast")]);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("unknown list target"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown list target")
+    );
 }
 
 // ── B10: Import resolution ─────────────────────────────────
@@ -340,7 +344,7 @@ fn cli_plan_format_unknown_errors() {
     };
     let result = run_plan(&[fixture("single_node.tast")], &opts);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("unknown format"));
+    assert!(result.unwrap_err().to_string().contains("unknown format"));
 }
 
 // ── F2: JUnit format via CLI ─────────────────────────────
@@ -409,9 +413,10 @@ fn run_opts_with_backend(backend: &str) -> RunOptions {
 fn cli_run_backend_http_requires_base_url() {
     let opts = run_opts_with_backend("http");
     let err = run_run(opts).unwrap_err();
+    let msg = err.to_string();
     assert!(
-        err.contains("--base-url"),
-        "expected error about --base-url, got: {err}"
+        msg.contains("--base-url"),
+        "expected error about --base-url, got: {msg}"
     );
 }
 
@@ -427,9 +432,10 @@ fn cli_run_backend_http_with_base_url_accepted() {
     match result {
         Ok(_) => {} // Backend was accepted, run completed (steps may have failed)
         Err(e) => {
+            let msg = e.to_string();
             assert!(
-                !e.contains("--base-url"),
-                "should not get base-url error when --base-url is provided, got: {e}"
+                !msg.contains("--base-url"),
+                "should not get base-url error when --base-url is provided, got: {msg}"
             );
         }
     }
@@ -449,8 +455,44 @@ fn cli_run_base_url_rejected_for_non_http_backend() {
     let mut opts = run_opts_with_backend("rust");
     opts.base_url = Some("http://localhost:3000".to_string());
     let err = run_run(opts).unwrap_err();
+    let msg = err.to_string();
     assert!(
-        err.contains("--base-url can only be used with --backend http"),
-        "got: {err}"
+        msg.contains("--base-url can only be used with --backend http"),
+        "got: {msg}"
     );
+}
+
+// ── B2: Diagnostic error variant tests ──────────────────────
+
+#[test]
+fn parse_error_returns_cli_error_parse_variant() {
+    let result = run_validate(&[fixture("invalid_syntax.tast")]);
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, CliError::Parse { .. }),
+        "expected CliError::Parse for invalid syntax, got: {err:?}"
+    );
+}
+
+#[test]
+fn general_error_returns_cli_error_general_variant() {
+    let result = run_plan(&[PathBuf::from("/nonexistent/path.tast")], &default_opts());
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, CliError::General(_)),
+        "expected CliError::General for I/O error, got: {err:?}"
+    );
+}
+
+#[test]
+fn parse_error_preserves_source_for_diagnostics() {
+    let result = run_validate(&[fixture("invalid_syntax.tast")]);
+    let err = result.unwrap_err();
+    match err {
+        CliError::Parse { source, error, .. } => {
+            assert!(!source.is_empty(), "source text should be preserved");
+            assert!(!error.message.is_empty(), "error message should be present");
+        }
+        CliError::General(msg) => panic!("expected CliError::Parse, got General: {msg}"),
+    }
 }

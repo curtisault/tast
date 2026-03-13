@@ -32,6 +32,38 @@ plan file:
 validate file:
     cargo run -- validate {{file}}
 
+# Show diagnostic error examples (all should fail with rich output)
+demo-errors:
+    @echo "══════════════════════════════════════════"
+    @echo "  1. Unterminated string literal"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/invalid_syntax.tast
+    @echo ""
+    @echo "══════════════════════════════════════════"
+    @echo "  2. Unclosed node (missing '}')"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/error_missing_brace.tast
+    @echo ""
+    @echo "══════════════════════════════════════════"
+    @echo "  3. Unknown node reference"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/error_unknown_node.tast
+    @echo ""
+    @echo "══════════════════════════════════════════"
+    @echo "  4. Duplicate node name"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/error_duplicate_node.tast
+    @echo ""
+    @echo "══════════════════════════════════════════"
+    @echo "  5. Unexpected token"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/error_unexpected_token.tast
+    @echo ""
+    @echo "══════════════════════════════════════════"
+    @echo "  6. Unclosed graph"
+    @echo "══════════════════════════════════════════"
+    -cargo run -q -- validate tests/fixtures/error_unclosed_graph.tast
+
 # Smoke test: plan and validate the full auth fixture + self-validation files
 smoke:
     cargo run -- validate tests/fixtures/full_auth.tast

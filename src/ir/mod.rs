@@ -173,6 +173,8 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
             *node_index.get(e.from.as_str()).ok_or_else(|| ParseError {
                 message: format!("edge references unknown node '{}'", e.from),
                 span: e.span,
+                secondary: vec![],
+                help: None,
             })?
         };
         let to_idx = if e.to.contains('.') {
@@ -181,6 +183,8 @@ pub fn lower(ast_graph: &ast::Graph) -> Result<IrGraph, ParseError> {
             *node_index.get(e.to.as_str()).ok_or_else(|| ParseError {
                 message: format!("edge references unknown node '{}'", e.to),
                 span: e.span,
+                secondary: vec![],
+                help: None,
             })?
         };
         edges.push(IrEdge {
