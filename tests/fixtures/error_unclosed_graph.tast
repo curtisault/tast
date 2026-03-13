@@ -1,0 +1,11 @@
+graph IncompleteGraph {
+  node StepOne {
+    describe "This node is fine"
+    given some precondition
+    when something happens
+    then a result occurs
+  }
+
+  node StepTwo {
+    describe "Also fine"
+  }
