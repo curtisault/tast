@@ -25,12 +25,12 @@ tast run -b http --base-url http://localhost:3000 tests/tast/http_pipeline.tast
 | **Rust** | `-b rust` | Convention-based binding to `cargo test` functions |
 | **HTTP** | `-b http` | Request/response testing with status, header, and body assertions |
 
-### Options
+### Run Options
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--backend` | `-b` | auto-detect | Backend to use |
-| `--format` | `-f` | `yaml` | Output format: `yaml`, `json`, `junit` |
+| `--format` | `-f` | `yaml` | Result format: `yaml`, `json`, `junit` |
 | `--output` | `-o` | stdout | Write results to a file |
 | `--timeout` | `-t` | `60` | Per-step timeout in seconds |
 | `--parallel` | `-p` | `1` | Max parallel steps |
@@ -206,15 +206,15 @@ graph OrderFlow {
 ### 3.1 System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         TAST CLI                            │
-│  tast plan | tast run | tast validate | tast visualize      │
-└──────────┬──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                              TAST CLI                                │
+│  tast plan | tast run | tast validate | tast visualize | tast list   │
+└──────────┬───────────────────────────────────────────────────────────┘
            │
      ┌─────▼──────┐
      │   Parser   │  .tast files → AST
      │  (Lexer +  │  Natural-language-aware tokenizer
-     │   Parser)  │  Pest / custom recursive descent
+     │   Parser)  │  Custom recursive descent
      └─────┬──────┘
            │
      ┌─────▼───────┐
@@ -234,9 +234,9 @@ graph OrderFlow {
            │
      ┌─────▼──────┐      ┌────────────────┐
      │  Emitters  │──────│  YAML (default)│
-     │  (Output)  │      │  JSON          │
-     │            │      │  Markdown      │
+     │  (Output)  │      │  Markdown      │
      │            │      │  JUnit XML     │
+     │            │      │  DOT / Mermaid │
      └─────┬──────┘      └────────────────┘
            │
      ┌─────▼────────────────┐
@@ -254,7 +254,7 @@ src/
 ├── lib.rs                   # Library root, module declarations
 ├── cli/
 │   ├── mod.rs
-│   └── commands.rs          # plan, run, validate, visualize subcommands
+│   └── commands.rs          # plan, run, validate, visualize, list subcommands
 ├── parser/
 │   ├── mod.rs
 │   ├── lexer.rs             # Tokenizer (keywords, NL phrases, data literals)
@@ -316,7 +316,8 @@ src/
 │           └── response.rs   # Response assertion evaluation
 └── util/
     ├── mod.rs
-    └── span.rs              # Source span tracking for errors
+    ├── span.rs              # Source span tracking for errors
+    └── diagnostics.rs       # Rich error rendering (ariadne)
 ```
 
 ### 3.3 Key Dependencies
@@ -326,7 +327,8 @@ src/
 | `clap` | CLI argument parsing with derive |
 | `petgraph` | Graph data structure, traversals, algorithms |
 | `serde` + `serde_yaml` | Serialization for YAML output |
-| `serde_json` | JSON output |
+| `serde_json` | JSON output (run results) |
+| `ariadne` | Rich diagnostic error rendering with source spans |
 | `ureq` | Blocking HTTP client for the HTTP backend |
 | `tempfile` | Temporary directories for harness generation |
 
@@ -337,30 +339,28 @@ src/
 ### 4.1 Commands
 
 ```bash
-# Initialize a new TAST project
-tast init
-
 # Compile test plans from .tast files (default: YAML to stdout)
-tast plan [FILES...] [--format yaml|json|markdown|junit] [--output FILE]
+tast plan [FILES...] [--format yaml|markdown|junit] [--output FILE]
 
 # Validate .tast files without compiling
 tast validate [FILES...]
 
 # Run tests (opt-in execution)
-tast run [FILES...] [--backend rust|shell] [--filter TAGS...] [--parallel N]
+tast run [FILES...] [--backend rust|shell|http] [--filter TAGS...] [--parallel N]
 
 # Visualize the test graph (DOT/Mermaid output)
 tast visualize [FILES...] [--format dot|mermaid] [--output FILE]
 
 # Show plan for a specific traversal path
 tast plan --from NodeA --to NodeB
-tast plan --containing NodeX
 
-# List all nodes, edges, tags
-tast list nodes|edges|tags [FILES...]
+# List all nodes, edges, tags, or fixtures
+tast list nodes|edges|tags|fixtures [FILES...]
 ```
 
-### 4.2 Configuration (`.tastrc.toml`)
+### 4.2 Configuration (`.tastrc.toml`) — Planned
+
+> **Note:** Configuration file support is not yet implemented. The schema below reflects the planned design. All options are currently passed via CLI flags.
 
 ```toml
 [project]
