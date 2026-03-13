@@ -30,7 +30,7 @@ pub enum CliError {
     Parse {
         filename: String,
         source: String,
-        error: ParseError,
+        error: Box<ParseError>,
     },
     /// An unstructured error (I/O, runtime, configuration, etc.).
     General(String),
@@ -95,7 +95,7 @@ fn lower_with_imports(graph: &ast::Graph, file: &Path, source: &str) -> Result<I
     let mut ir = lower(graph).map_err(|error| CliError::Parse {
         filename: filename.clone(),
         source: source.to_owned(),
-        error,
+        error: Box::new(error),
     })?;
 
     if !graph.imports.is_empty() {
@@ -128,7 +128,7 @@ pub fn run_plan(files: &[PathBuf], options: &PlanOptions) -> Result<String, CliE
         let graphs = parse(&input).map_err(|error| CliError::Parse {
             filename: filename.clone(),
             source: input.clone(),
-            error,
+            error: Box::new(error),
         })?;
 
         for graph in &graphs {
@@ -193,7 +193,7 @@ pub fn run_validate(files: &[PathBuf]) -> Result<String, CliError> {
         let graphs = parse(&input).map_err(|error| CliError::Parse {
             filename: filename.clone(),
             source: input.clone(),
-            error,
+            error: Box::new(error),
         })?;
 
         for graph in &graphs {
@@ -231,7 +231,7 @@ pub fn run_visualize(
         let graphs = parse(&input).map_err(|error| CliError::Parse {
             filename: filename.clone(),
             source: input.clone(),
-            error,
+            error: Box::new(error),
         })?;
 
         for graph in &graphs {
@@ -274,7 +274,7 @@ pub fn run_list(what: &str, files: &[PathBuf]) -> Result<String, CliError> {
         let graphs = parse(&input).map_err(|error| CliError::Parse {
             filename: filename.clone(),
             source: input.clone(),
-            error,
+            error: Box::new(error),
         })?;
 
         for graph in &graphs {
@@ -429,7 +429,7 @@ pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
         let graphs = parse(&input).map_err(|error| CliError::Parse {
             filename: filename.clone(),
             source: input.clone(),
-            error,
+            error: Box::new(error),
         })?;
 
         for graph in &graphs {
@@ -488,11 +488,13 @@ mod tests {
         let error = ParseError {
             message: "unexpected token".to_string(),
             span: Span::new(10, 15, 2, 3),
+            secondary: vec![],
+            help: None,
         };
         let cli_err = CliError::Parse {
             filename: "test.tast".to_string(),
             source: "graph G {\nfoo bar".to_string(),
-            error,
+            error: Box::new(error),
         };
         match &cli_err {
             CliError::Parse {
@@ -526,10 +528,12 @@ mod tests {
         let parse_err = CliError::Parse {
             filename: "foo.tast".to_string(),
             source: String::new(),
-            error: ParseError {
+            error: Box::new(ParseError {
                 message: "bad syntax".to_string(),
                 span: Span::new(0, 1, 1, 1),
-            },
+                secondary: vec![],
+                help: None,
+            }),
         };
         let general_err: CliError = "io error".to_owned().into();
 

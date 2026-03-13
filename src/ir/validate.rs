@@ -21,6 +21,8 @@ fn check_duplicate_nodes(ir: &IrGraph) -> Result<(), ParseError> {
             return Err(ParseError {
                 message: format!("duplicate node name '{}'", node.name),
                 span: node.span,
+                secondary: vec![],
+                help: None,
             });
         }
     }
@@ -51,6 +53,8 @@ fn check_requires_satisfied(ir: &IrGraph) -> Result<(), ParseError> {
                         node.name, req
                     ),
                     span: node.span,
+                    secondary: vec![],
+                    help: None,
                 });
             }
         }

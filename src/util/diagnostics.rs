@@ -20,13 +20,28 @@ pub fn render_parse_error<W: Write>(
 ) -> std::io::Result<()> {
     let range = error.span.start..error.span.end;
 
-    Report::build(ReportKind::Error, filename, error.span.start)
+    let mut report = Report::build(ReportKind::Error, filename, error.span.start)
         .with_message(&error.message)
         .with_label(
             Label::new((filename, range))
                 .with_message(&error.message)
                 .with_color(Color::Red),
-        )
+        );
+
+    for secondary in &error.secondary {
+        let sec_range = secondary.span.start..secondary.span.end;
+        report = report.with_label(
+            Label::new((filename, sec_range))
+                .with_message(&secondary.message)
+                .with_color(Color::Blue),
+        );
+    }
+
+    if let Some(help) = &error.help {
+        report = report.with_help(help);
+    }
+
+    report
         .finish()
         .write_for_stdout((filename, Source::from(source)), w)
 }
@@ -74,6 +89,8 @@ mod tests {
         let error = ParseError {
             message: "expected '{' after node name".to_string(),
             span: Span::new(16, 17, 2, 6),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -88,6 +105,8 @@ mod tests {
         let error = ParseError {
             message: "unexpected token".to_string(),
             span: Span::new(0, 5, 1, 1),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("my_file.tast", source, &error);
         assert!(
@@ -102,6 +121,8 @@ mod tests {
         let error = ParseError {
             message: "expected '{'".to_string(),
             span: Span::new(16, 20, 1, 17),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -117,6 +138,8 @@ mod tests {
         let error = ParseError {
             message: "unexpected end of file".to_string(),
             span: Span::new(len, len, 1, len + 1),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -132,6 +155,8 @@ mod tests {
         let error = ParseError {
             message: "unexpected identifier".to_string(),
             span: Span::new(6, 14, 1, 7),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         // Ariadne renders underline characters (─ or ╰) under the span.
@@ -154,6 +179,8 @@ mod tests {
         let error = ParseError {
             message: "expected '}'".to_string(),
             span: Span::new(len, len, 3, 1),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -174,6 +201,8 @@ mod tests {
         let error = ParseError {
             message: "expected '{'".to_string(),
             span: Span::new(8, 8, 1, 9),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -193,6 +222,8 @@ mod tests {
         let error = ParseError {
             message: "expected 'node', found 'describe'".to_string(),
             span: Span::new(12, 20, 2, 3),
+            secondary: vec![],
+            help: None,
         };
         let output = render_to_string("test.tast", source, &error);
         assert!(
@@ -202,6 +233,114 @@ mod tests {
         assert!(
             output.contains("describe"),
             "output should show the spanned source text, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn diagnostic_secondary_span_rendered() {
+        // Secondary label should appear in the output alongside the primary.
+        let source = "graph G {\n  node A {}\n  node A {}\n}";
+        let error = ParseError::new("duplicate node name 'A'", Span::new(23, 29, 3, 3))
+            .with_secondary("first defined here", Span::new(12, 18, 2, 3));
+        let output = render_to_string("test.tast", source, &error);
+        assert!(
+            output.contains("duplicate node name 'A'"),
+            "output should contain primary error, got:\n{output}"
+        );
+        assert!(
+            output.contains("first defined here"),
+            "output should contain secondary label, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn diagnostic_duplicate_node_shows_original() {
+        // When parsing a file with a duplicate node, the diagnostic should
+        // point to both the duplicate and the original definition.
+        use crate::parser::parse::parse;
+
+        let source = "graph G {\n  node Dup {}\n  node Dup {}\n}";
+        let err = parse(source).unwrap_err();
+        assert!(err.message.contains("duplicate node name"));
+        assert!(
+            !err.secondary.is_empty(),
+            "duplicate node error should have a secondary label"
+        );
+        assert!(
+            err.secondary[0].message.contains("first defined"),
+            "secondary should mention first definition, got: {}",
+            err.secondary[0].message
+        );
+    }
+
+    #[test]
+    fn diagnostic_unclosed_block_shows_opener() {
+        // When a graph or node is unclosed, the diagnostic should point back
+        // to the opening '{'.
+        use crate::parser::parse::parse;
+
+        let source = "graph G {\n  node A {\n    given something\n";
+        let err = parse(source).unwrap_err();
+        assert!(
+            err.message.contains("unclosed"),
+            "error should mention unclosed, got: {}",
+            err.message
+        );
+        assert!(
+            !err.secondary.is_empty(),
+            "unclosed block error should have a secondary label pointing to opener"
+        );
+        assert!(
+            err.secondary[0].message.contains("opened here"),
+            "secondary should mention where block was opened, got: {}",
+            err.secondary[0].message
+        );
+    }
+
+    #[test]
+    fn diagnostic_help_text_rendered() {
+        // Help text should appear in the rendered output.
+        let source = "graph G {}";
+        let error = ParseError::new("some error", Span::new(0, 5, 1, 1))
+            .with_help("try adding a closing brace '}'");
+        let output = render_to_string("test.tast", source, &error);
+        assert!(
+            output.contains("try adding a closing brace '}'"),
+            "output should contain help text, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn diagnostic_unknown_node_has_help() {
+        // When an edge references an unknown node, help text should suggest
+        // checking the spelling.
+        use crate::parser::parse::parse;
+
+        let source = "graph G {\n  node Login {}\n  Login -> Logut\n}";
+        let err = parse(source).unwrap_err();
+        assert!(err.message.contains("unknown node"));
+        assert!(
+            err.help.is_some(),
+            "unknown node error should have help text"
+        );
+        let help = err.help.as_deref().unwrap();
+        assert!(
+            help.contains("Login"),
+            "help should suggest similar node name, got: {help}"
+        );
+    }
+
+    #[test]
+    fn diagnostic_unclosed_brace_has_help() {
+        // Unclosed block errors should include help text.
+        use crate::parser::parse::parse;
+
+        let source = "graph G {\n  node A {\n";
+        let err = parse(source).unwrap_err();
+        assert!(err.message.contains("unclosed"));
+        assert!(
+            err.help.is_some(),
+            "unclosed block error should have help text"
         );
     }
 }

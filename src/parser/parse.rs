@@ -14,6 +14,8 @@ pub fn parse(input: &str) -> Result<Vec<Graph>, ParseError> {
     let tokens = tokenize(input).map_err(|e| ParseError {
         message: e.message,
         span: e.span,
+        secondary: vec![],
+        help: None,
     })?;
     let mut parser = Parser::new(&tokens);
     parser.parse_file()
@@ -79,10 +81,14 @@ impl<'a> Parser<'a> {
             Some(t) => Err(ParseError {
                 message: format!("expected {}, found {:?}", token_name(expected), t.kind),
                 span: t.span,
+                secondary: vec![],
+                help: None,
             }),
             None => Err(ParseError {
                 message: format!("expected {}, found end of input", token_name(expected)),
                 span: self.eof_span(),
+                secondary: vec![],
+                help: None,
             }),
         }
     }
@@ -98,10 +104,14 @@ impl<'a> Parser<'a> {
             Some(t) => Err(ParseError {
                 message: format!("expected identifier, found {:?}", t.kind),
                 span: t.span,
+                secondary: vec![],
+                help: None,
             }),
             None => Err(ParseError {
                 message: "expected identifier, found end of input".to_owned(),
                 span: self.eof_span(),
+                secondary: vec![],
+                help: None,
             }),
         }
     }
@@ -150,6 +160,8 @@ impl<'a> Parser<'a> {
                     return Err(ParseError {
                         message: format!("expected 'graph' or 'import', found {:?}", other),
                         span: tok.span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
                 None => break,
@@ -162,7 +174,7 @@ impl<'a> Parser<'a> {
     fn parse_graph(&mut self) -> Result<Graph, ParseError> {
         let start_span = self.expect(&TokenKind::Graph)?;
         let (name, _) = self.expect_identifier()?;
-        self.expect(&TokenKind::LBrace)?;
+        let open_brace_span = self.expect(&TokenKind::LBrace)?;
 
         let mut nodes: Vec<Node> = Vec::new();
         let mut edges: Vec<Edge> = Vec::new();
@@ -177,14 +189,17 @@ impl<'a> Parser<'a> {
                     let span = start_span.merge(end_span);
 
                     // Validate no duplicate node names
-                    let mut seen = std::collections::HashSet::new();
+                    let mut seen: std::collections::HashMap<&str, Span> =
+                        std::collections::HashMap::new();
                     for node in &nodes {
-                        if !seen.insert(&node.name) {
-                            return Err(ParseError {
-                                message: format!("duplicate node name '{}'", node.name),
-                                span: node.span,
-                            });
+                        if let Some(&first_span) = seen.get(node.name.as_str()) {
+                            return Err(ParseError::new(
+                                format!("duplicate node name '{}'", node.name),
+                                node.span,
+                            )
+                            .with_secondary("first defined here", first_span));
                         }
+                        seen.insert(&node.name, node.span);
                     }
 
                     // Validate edge references (skip dotted names — those are cross-graph refs)
@@ -192,16 +207,28 @@ impl<'a> Parser<'a> {
                         nodes.iter().map(|n| n.name.as_str()).collect();
                     for edge in &edges {
                         if !edge.from.contains('.') && !node_names.contains(edge.from.as_str()) {
-                            return Err(ParseError {
-                                message: format!("edge references unknown node '{}'", edge.from),
-                                span: edge.span,
-                            });
+                            let mut err = ParseError::new(
+                                format!("edge references unknown node '{}'", edge.from),
+                                edge.span,
+                            );
+                            if let Some(suggestion) =
+                                closest_match(&edge.from, node_names.iter().copied())
+                            {
+                                err = err.with_help(format!("did you mean '{suggestion}'?"));
+                            }
+                            return Err(err);
                         }
                         if !edge.to.contains('.') && !node_names.contains(edge.to.as_str()) {
-                            return Err(ParseError {
-                                message: format!("edge references unknown node '{}'", edge.to),
-                                span: edge.span,
-                            });
+                            let mut err = ParseError::new(
+                                format!("edge references unknown node '{}'", edge.to),
+                                edge.span,
+                            );
+                            if let Some(suggestion) =
+                                closest_match(&edge.to, node_names.iter().copied())
+                            {
+                                err = err.with_help(format!("did you mean '{suggestion}'?"));
+                            }
+                            return Err(err);
                         }
                     }
 
@@ -229,10 +256,11 @@ impl<'a> Parser<'a> {
                     edges.push(self.parse_edge()?);
                 }
                 None => {
-                    return Err(ParseError {
-                        message: "unclosed graph, expected '}'".to_owned(),
-                        span: self.eof_span(),
-                    });
+                    return Err(
+                        ParseError::new("unclosed graph, expected '}'", self.eof_span())
+                            .with_secondary("opened here", open_brace_span)
+                            .with_help("add a closing '}' to end the graph block"),
+                    );
                 }
                 Some(other) => {
                     let tok = self.peek().unwrap();
@@ -242,6 +270,8 @@ impl<'a> Parser<'a> {
                             other
                         ),
                         span: tok.span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -252,7 +282,7 @@ impl<'a> Parser<'a> {
     fn parse_node(&mut self) -> Result<Node, ParseError> {
         let start_span = self.expect(&TokenKind::Node)?;
         let (name, _) = self.expect_identifier()?;
-        self.expect(&TokenKind::LBrace)?;
+        let open_brace_span = self.expect(&TokenKind::LBrace)?;
 
         let mut description = None;
         let mut steps = Vec::new();
@@ -292,6 +322,8 @@ impl<'a> Parser<'a> {
                                     t.kind
                                 ),
                                 span: t.span,
+                                secondary: vec![],
+                                help: None,
                             });
                         }
                         None => {
@@ -299,6 +331,8 @@ impl<'a> Parser<'a> {
                                 message: "expected string after 'describe', found end of input"
                                     .to_owned(),
                                 span: self.eof_span(),
+                                secondary: vec![],
+                                help: None,
                             });
                         }
                     }
@@ -320,16 +354,19 @@ impl<'a> Parser<'a> {
                     config = Some(self.parse_config_block()?);
                 }
                 None => {
-                    return Err(ParseError {
-                        message: "unclosed node, expected '}'".to_owned(),
-                        span: self.eof_span(),
-                    });
+                    return Err(
+                        ParseError::new("unclosed node, expected '}'", self.eof_span())
+                            .with_secondary("opened here", open_brace_span)
+                            .with_help("add a closing '}' to end the node block"),
+                    );
                 }
                 Some(other) => {
                     let tok = self.peek().unwrap();
                     return Err(ParseError {
                         message: format!("unexpected {:?} inside node", other),
                         span: tok.span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -428,6 +465,8 @@ impl<'a> Parser<'a> {
                     return Err(ParseError {
                         message: "expected tag name or ']'".to_owned(),
                         span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -457,6 +496,8 @@ impl<'a> Parser<'a> {
                     return Err(ParseError {
                         message: "expected field name or '}'".to_owned(),
                         span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -490,7 +531,7 @@ impl<'a> Parser<'a> {
 
         // Edge body is optional
         let (passes, description, end_span) = if self.peek_kind() == Some(&TokenKind::LBrace) {
-            self.expect(&TokenKind::LBrace)?;
+            let edge_brace_span = self.expect(&TokenKind::LBrace)?;
             let mut passes = Vec::new();
             let mut desc = None;
 
@@ -520,27 +561,34 @@ impl<'a> Parser<'a> {
                                         t.kind
                                     ),
                                     span: t.span,
+                                    secondary: vec![],
+                                    help: None,
                                 });
                             }
                             None => {
                                 return Err(ParseError {
                                     message: "expected string after 'describe'".to_owned(),
                                     span: self.eof_span(),
+                                    secondary: vec![],
+                                    help: None,
                                 });
                             }
                         }
                     }
                     None => {
-                        return Err(ParseError {
-                            message: "unclosed edge block, expected '}'".to_owned(),
-                            span: self.eof_span(),
-                        });
+                        return Err(ParseError::new(
+                            "unclosed edge block, expected '}'",
+                            self.eof_span(),
+                        )
+                        .with_secondary("opened here", edge_brace_span));
                     }
                     Some(other) => {
                         let tok = self.peek().unwrap();
                         return Err(ParseError {
                             message: format!("unexpected {:?} inside edge block", other),
                             span: tok.span,
+                            secondary: vec![],
+                            help: None,
                         });
                     }
                 }
@@ -580,6 +628,8 @@ impl<'a> Parser<'a> {
                     return Err(ParseError {
                         message: "expected identifier or '}'".to_owned(),
                         span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -614,6 +664,8 @@ impl<'a> Parser<'a> {
                     return Err(ParseError {
                         message: "expected field name or '}' in data block".to_owned(),
                         span,
+                        secondary: vec![],
+                        help: None,
                     });
                 }
             }
@@ -640,10 +692,14 @@ impl<'a> Parser<'a> {
             Some(t) => Err(ParseError {
                 message: format!("expected value, found {:?}", t.kind),
                 span: t.span,
+                secondary: vec![],
+                help: None,
             }),
             None => Err(ParseError {
                 message: "expected value, found end of input".to_owned(),
                 span: self.eof_span(),
+                secondary: vec![],
+                help: None,
             }),
         }
     }
@@ -672,10 +728,14 @@ impl<'a> Parser<'a> {
             Some(t) => Err(ParseError {
                 message: format!("expected path string after 'from', found {:?}", t.kind),
                 span: t.span,
+                secondary: vec![],
+                help: None,
             }),
             None => Err(ParseError {
                 message: "expected path string after 'from'".to_owned(),
                 span: self.eof_span(),
+                secondary: vec![],
+                help: None,
             }),
         }
     }
@@ -727,6 +787,34 @@ fn token_name(kind: &TokenKind) -> &'static str {
         #[allow(unreachable_patterns)]
         _ => "token",
     }
+}
+
+/// Levenshtein edit distance between two strings.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b_len = b.len();
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(curr[j] + 1).min(prev[j + 1] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+/// Find the closest matching name from `candidates`, if any is within
+/// a reasonable edit distance (at most half the target length, minimum 2).
+fn closest_match<'a>(target: &str, candidates: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let max_dist = (target.len() / 2).max(2);
+    candidates
+        .map(|c| (c, edit_distance(target, c)))
+        .filter(|&(_, d)| d > 0 && d <= max_dist)
+        .min_by_key(|&(_, d)| d)
+        .map(|(name, _)| name)
 }
 
 #[cfg(test)]
