@@ -219,6 +219,47 @@ fn self_validation_shell_pipeline_plans() {
     assert!(deserialized.get("steps").is_some());
 }
 
+// ── BEAM Backends self-validation ────────────────────────────
+
+#[test]
+fn self_validation_beam_backends_parses() {
+    let result = run_validate(&[tast_file("beam_backends.tast")]);
+    let output = result.expect("beam_backends.tast should validate");
+    assert!(output.contains("BeamBackends is valid"));
+}
+
+#[test]
+fn self_validation_beam_backends_plans() {
+    let yaml =
+        run_plan(&[tast_file("beam_backends.tast")], &default_opts()).expect("plan should succeed");
+    assert!(yaml.contains("name: BeamBackends"));
+    assert!(yaml.contains("traversal: topological"));
+    let deserialized: serde_yaml::Value =
+        serde_yaml::from_str(&yaml).expect("output should be valid YAML");
+    assert!(deserialized.get("plan").is_some());
+    assert!(deserialized.get("steps").is_some());
+}
+
+#[test]
+fn self_validation_beam_backends_node_count() {
+    let result = run_validate(&[tast_file("beam_backends.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("4 nodes"),
+        "BeamBackends should have 4 nodes"
+    );
+}
+
+#[test]
+fn self_validation_beam_backends_edge_count() {
+    let result = run_validate(&[tast_file("beam_backends.tast")]);
+    let output = result.expect("should validate");
+    assert!(
+        output.contains("3 edges"),
+        "BeamBackends should have 3 edges"
+    );
+}
+
 // ── HTTP Pipeline self-validation ───────────────────────────
 
 #[test]
