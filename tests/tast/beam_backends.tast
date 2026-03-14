@@ -1,0 +1,60 @@
+# BEAM Backends — self-validation for Phase 5 BEAM ecosystem
+#
+# This .tast file describes the shared BEAM backend pipeline:
+# detect project → generate harness → execute tests → capture outputs.
+
+graph BeamBackends {
+
+  node DetectProject {
+    describe "Detect BEAM project type from project markers"
+
+    given a directory with project marker files
+    when the BEAM adapter detects the project type
+    then the correct BEAM language is identified
+    tags [beam, detection]
+  }
+
+  node GenerateHarness {
+    describe "Generate language-specific test harness files"
+
+    given a compiled test plan
+    and a detected BEAM project type
+    when the backend generates the harness
+    then language-specific test files are created
+    tags [beam, harness]
+  }
+
+  node ExecuteTests {
+    describe "Execute generated tests via the BEAM runtime"
+
+    given generated test harness files
+    and a working BEAM installation
+    when the backend runs the tests
+    then test results are captured with pass/fail status
+    tags [beam, execution]
+  }
+
+  node CaptureOutputs {
+    describe "Capture TAST_OUTPUT data from BEAM process stdout"
+
+    given a BEAM test that emits TAST_OUTPUT markers
+    when the output parser processes stdout
+    then data fields are extracted and recorded in the run context
+    tags [beam, data_passing]
+  }
+
+  DetectProject -> GenerateHarness {
+    passes { project_type }
+    describe "Project type informs harness generation"
+  }
+
+  GenerateHarness -> ExecuteTests {
+    passes { harness_files, entry_point }
+    describe "Harness files flow to test execution"
+  }
+
+  ExecuteTests -> CaptureOutputs {
+    passes { stdout, stderr, exit_code }
+    describe "Test execution output flows to parser"
+  }
+}
