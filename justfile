@@ -64,6 +64,27 @@ demo-errors:
     @echo "══════════════════════════════════════════"
     -cargo run -q -- validate tests/fixtures/error_unclosed_graph.tast
 
+# Run all BEAM backend tests (unit + integration)
+test-beam:
+    cargo test -p tast beam
+    cargo test --test elixir_backend_integration --test gleam_backend_integration --test erlang_backend_integration
+    cargo test --test tast_self_validation beam
+
+# Run Elixir backend tests (unit + integration)
+test-elixir:
+    cargo test -p tast elixir
+    cargo test --test elixir_backend_integration
+
+# Run Gleam backend tests (unit + integration)
+test-gleam:
+    cargo test -p tast gleam
+    cargo test --test gleam_backend_integration
+
+# Run Erlang backend tests (unit + integration)
+test-erlang:
+    cargo test -p tast erlang
+    cargo test --test erlang_backend_integration
+
 # Smoke test: plan and validate the full auth fixture + self-validation files
 smoke:
     cargo run -- validate tests/fixtures/full_auth.tast
