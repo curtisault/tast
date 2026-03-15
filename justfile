@@ -85,6 +85,36 @@ test-erlang:
     cargo test -p tast erlang
     cargo test --test erlang_backend_integration
 
+# Clone platform test repos (gitignored, not committed)
+platform-setup:
+    @echo "Cloning platform test repos..."
+    @if [ ! -d tests/platform/rust/jyt ]; then \
+        git clone https://github.com/ken-matsui/jyt.git tests/platform/rust/jyt; \
+    else \
+        echo "  rust/jyt already present"; \
+    fi
+    @if [ ! -d tests/platform/elixir/slugify ]; then \
+        git clone https://github.com/jayjun/slugify.git tests/platform/elixir/slugify; \
+    else \
+        echo "  elixir/slugify already present"; \
+    fi
+
+# Validate and plan Rust platform .tast files
+platform-test-rust:
+    cargo run -- validate tests/platform/rust/*.tast
+    cargo run -- plan tests/platform/rust/*.tast
+
+# Validate and plan Elixir platform .tast files
+platform-test-elixir:
+    cargo run -- validate tests/platform/elixir/*.tast
+    cargo run -- plan tests/platform/elixir/*.tast
+
+# Delete cloned platform repos to reclaim disk space
+platform-cleanup:
+    rm -rf tests/platform/rust/jyt
+    rm -rf tests/platform/elixir/slugify
+    @echo "Platform repos removed."
+
 # Smoke test: plan and validate the full auth fixture + self-validation files
 smoke:
     cargo run -- validate tests/fixtures/full_auth.tast
