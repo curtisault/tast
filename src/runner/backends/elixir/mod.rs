@@ -47,23 +47,25 @@ impl TestBackend for ElixirBackend {
     fn generate_harness(
         &self,
         plan: &TestPlan,
-        _context: &RunContext,
+        context: &RunContext,
     ) -> Result<GeneratedHarness, BackendError> {
         let module_name = env::generated_module_name(&plan.plan.name);
         let test_file_name = format!("{}_test.exs", env::to_beam_name(&module_name));
         let helper_file_name = "tast_helper.exs";
 
-        // Create the output directory for generated files.
-        let gen_dir = tempfile::tempdir().map_err(|e| BackendError {
+        // Write generated files into the project's test/tast_generated/ directory
+        // so that `mix test` can compile and load them naturally.
+        let gen_dir = context.working_dir().join("test").join("tast_generated");
+        std::fs::create_dir_all(&gen_dir).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
-            message: format!("failed to create temp directory: {e}"),
+            message: format!("failed to create directory {}: {e}", gen_dir.display()),
             detail: None,
         })?;
 
         let mut files = Vec::new();
 
         // Write the helper module.
-        let helper_path = gen_dir.path().join(helper_file_name);
+        let helper_path = gen_dir.join(helper_file_name);
         let helper_content = harness::generate_helper_module();
         std::fs::write(&helper_path, &helper_content).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
@@ -73,7 +75,7 @@ impl TestBackend for ElixirBackend {
         files.push(helper_path);
 
         // Write the test module.
-        let test_path = gen_dir.path().join(&test_file_name);
+        let test_path = gen_dir.join(&test_file_name);
         let test_content = harness::generate_exunit_file(plan);
         std::fs::write(&test_path, &test_content).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
@@ -82,11 +84,9 @@ impl TestBackend for ElixirBackend {
         })?;
         files.push(test_path);
 
-        let entry_point = gen_dir.keep();
-
         Ok(GeneratedHarness {
             files,
-            entry_point,
+            entry_point: gen_dir,
             metadata: HashMap::from([
                 ("test_file".to_owned(), test_file_name),
                 ("helper_file".to_owned(), helper_file_name.to_owned()),
@@ -156,8 +156,11 @@ impl TestBackend for ElixirBackend {
 
         let duration = start.elapsed();
 
-        // Extract TAST_OUTPUT markers.
-        let outputs = context::extract_step_outputs(&output.stdout);
+        // Extract TAST_OUTPUT markers from both stdout and stderr.
+        // The TastHelper writes to :standard_error to bypass ExUnit IO capture,
+        // so markers typically appear in stderr.
+        let mut outputs = context::extract_step_outputs(&output.stdout);
+        outputs.extend(context::extract_step_outputs(&output.stderr));
         if !outputs.is_empty() {
             context.record_outputs(&step.node, outputs.clone());
         }
@@ -313,7 +316,8 @@ mod tests {
     fn elixir_backend_generate_harness_creates_files() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.entry_point.exists());
@@ -322,7 +326,14 @@ mod tests {
             assert!(file.exists());
         }
 
-        // Clean up.
+        // Harness should be inside the project's test/ directory.
+        assert!(
+            harness
+                .entry_point
+                .starts_with(project_dir.path().join("test")),
+            "harness should be inside project test/ dir"
+        );
+
         let _ = backend.cleanup(&harness);
     }
 
@@ -330,7 +341,8 @@ mod tests {
     fn elixir_backend_generate_harness_includes_helper() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.metadata.contains_key("helper_file"));
@@ -348,7 +360,8 @@ mod tests {
     fn elixir_backend_generate_harness_has_test_file() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.metadata.contains_key("test_file"));
@@ -365,7 +378,8 @@ mod tests {
     fn elixir_backend_cleanup_removes_generated_dir() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         let entry = harness.entry_point.clone();
@@ -379,7 +393,8 @@ mod tests {
     fn elixir_backend_cleanup_idempotent() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         backend.cleanup(&harness).unwrap();

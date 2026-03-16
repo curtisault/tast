@@ -116,6 +116,10 @@ enum Commands {
         /// Base URL for HTTP backend (e.g., http://localhost:3000)
         #[arg(long)]
         base_url: Option<String>,
+
+        /// Project directory to run tests in (default: current directory)
+        #[arg(long, short = 'w')]
+        working_dir: Option<PathBuf>,
     },
 
     /// Visualize the test graph (DOT/Mermaid output)
@@ -199,6 +203,7 @@ fn main() {
             keep_harness,
             strategy,
             base_url,
+            working_dir,
         }) => {
             if files.is_empty() {
                 eprintln!("error: no input files provided");
@@ -216,6 +221,7 @@ fn main() {
                 keep_harness,
                 strategy,
                 base_url,
+                working_dir,
             };
             match commands::run_run(options) {
                 Ok(success) => {

@@ -357,6 +357,7 @@ pub struct RunOptions {
     pub keep_harness: bool,
     pub strategy: String,
     pub base_url: Option<String>,
+    pub working_dir: Option<PathBuf>,
 }
 
 /// Run the `run` command: parse .tast files, execute tests, and emit results.
@@ -378,7 +379,12 @@ pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
         }
     };
 
-    let working_dir = std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
+    let working_dir = match &options.working_dir {
+        Some(dir) => dir
+            .canonicalize()
+            .map_err(|e| format!("invalid working-dir '{}': {e}", dir.display()))?,
+        None => std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?,
+    };
 
     // Validate --base-url usage.
     if options.base_url.is_some()
