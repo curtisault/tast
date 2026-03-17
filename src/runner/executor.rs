@@ -26,6 +26,10 @@ pub struct RunConfig {
     pub working_dir: PathBuf,
     /// Delete generated harness files after the run.
     pub clean_harness: bool,
+    /// Directory containing the .tast source file (for companion file discovery).
+    pub source_dir: Option<PathBuf>,
+    /// Stem of the .tast file (e.g., "hashids" from "hashids.tast").
+    pub tast_file_stem: Option<String>,
 }
 
 impl Default for RunConfig {
@@ -38,6 +42,8 @@ impl Default for RunConfig {
             capture_output: true,
             working_dir: PathBuf::from("."),
             clean_harness: true,
+            source_dir: None,
+            tast_file_stem: None,
         }
     }
 }
@@ -85,6 +91,8 @@ impl TestRunner {
         context.default_timeout = self.config.timeout;
         context.capture_output = self.config.capture_output;
         context.graph_config = plan.config.clone();
+        context.source_dir = self.config.source_dir.clone();
+        context.tast_file_stem = self.config.tast_file_stem.clone();
 
         let harness = backend
             .generate_harness(plan, &context)

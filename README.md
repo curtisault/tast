@@ -463,6 +463,17 @@ steps:
 
 ---
 
-## 6. Implementation Details
+## 6. Platform Tests
+
+Real-world integration tests that run TAST against open source projects to validate the full pipeline end-to-end. See [tests/platform/README.md](tests/platform/README.md) for details.
+
+```bash
+just platform-setup         # clone test repos (gitignored)
+just platform-test-elixir   # validate + plan Elixir .tast files (no Elixir required)
+just platform-e2e-elixir    # run tast against real slugify project (requires mix)
+just platform-e2e-hashids   # run tast against real hashids project (requires mix)
+```
+
+## 7. Implementation Details
 
 For the full phased implementation plan, parser strategy, data flow model, language support roadmap, and design decisions, see [docs/implementation-details.md](docs/implementation-details.md).

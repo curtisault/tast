@@ -1,0 +1,91 @@
+# jyt — tridirectional JSON/YAML/TOML converter
+#
+# Models the core conversion pipeline: read input → deserialize from
+# source format → intermediate serde Value → serialize to target format
+# → emit output. Covers the round-trip fidelity property and error paths.
+#
+# Project: https://github.com/ken-matsui/jyt
+
+graph JytConverter {
+
+  node ReadInput {
+    describe "Read configuration data from file argument or stdin"
+
+    given a valid configuration file in JSON, YAML, or TOML format
+    when the input is read from a CLI argument or stdin
+    then the raw input string is captured for processing
+    tags [jyt, io]
+  }
+
+  node DeserializeSource {
+    describe "Parse input string into an intermediate serde Value"
+
+    given a raw input string
+    and a source format identifier (JSON, YAML, or TOML)
+    when the format-specific deserializer parses the input
+    then a serde Value representing the data structure is produced
+    tags [jyt, deserialize]
+  }
+
+  node SerializeTarget {
+    describe "Convert intermediate serde Value to the target format string"
+
+    given a serde Value from deserialization
+    and a target format (JSON, YAML, or TOML)
+    when the format-specific serializer produces the output string
+    then the output contains the same data in the target format syntax
+    tags [jyt, serialize]
+  }
+
+  node ValidateRoundTrip {
+    describe "Verify data integrity is preserved across format conversion"
+
+    given output in a target format
+    when the output is deserialized back into a serde Value
+    then the resulting Value is structurally equivalent to the original input
+    tags [jyt, validation]
+  }
+
+  node HandleErrors {
+    describe "Report meaningful errors for invalid or malformed input"
+
+    given malformed input that cannot be parsed as the declared format
+    when deserialization fails
+    then a descriptive error message distinguishes serialization from deserialization failures
+    tags [jyt, errors]
+  }
+
+  node EmitOutput {
+    describe "Print converted output to stdout with format-appropriate trimming"
+
+    given a successfully converted output string
+    when output is written to stdout
+    then trailing whitespace is trimmed for YAML and TOML but preserved for JSON
+    tags [jyt, io]
+  }
+
+  ReadInput -> DeserializeSource {
+    passes { raw_input, source_format }
+    describe "Raw input string and its declared format flow to the deserializer"
+  }
+
+  DeserializeSource -> SerializeTarget {
+    passes { serde_value }
+    describe "Parsed intermediate Value flows to the target serializer"
+  }
+
+  DeserializeSource -> HandleErrors {
+    passes { parse_error }
+    describe "Deserialization failures flow to the error handler"
+  }
+
+  SerializeTarget -> EmitOutput {
+    passes { output_string, target_format }
+    describe "Serialized output and format metadata flow to the emitter"
+  }
+
+  SerializeTarget -> ValidateRoundTrip {
+    passes { output_string, original_value }
+    describe "Output and original Value flow to round-trip verification"
+  }
+}

@@ -98,6 +98,11 @@ platform-setup:
     else \
         echo "  elixir/slugify already present"; \
     fi
+    @if [ ! -d tests/platform/elixir/hashids ]; then \
+        git clone https://github.com/alco/hashids-elixir.git tests/platform/elixir/hashids; \
+    else \
+        echo "  elixir/hashids already present"; \
+    fi
 
 # Validate and plan Rust platform .tast files
 platform-test-rust:
@@ -109,10 +114,19 @@ platform-test-elixir:
     cargo run -- validate tests/platform/elixir/*.tast
     cargo run -- plan tests/platform/elixir/*.tast
 
+# Run live E2E tests against the real slugify Elixir project
+platform-e2e-elixir:
+    cargo run -- run tests/platform/elixir/slugify.tast --backend elixir --working-dir tests/platform/elixir/slugify
+
+# Run live E2E tests against the real hashids Elixir project
+platform-e2e-hashids:
+    cargo run -- run tests/platform/elixir/hashids.tast --backend elixir --working-dir tests/platform/elixir/hashids
+
 # Delete cloned platform repos to reclaim disk space
 platform-cleanup:
     rm -rf tests/platform/rust/jyt
     rm -rf tests/platform/elixir/slugify
+    rm -rf tests/platform/elixir/hashids
     @echo "Platform repos removed."
 
 # Smoke test: plan and validate the full auth fixture + self-validation files
