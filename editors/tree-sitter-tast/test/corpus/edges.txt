@@ -1,0 +1,82 @@
+==================
+simple edge
+==================
+
+graph G {
+  node A { given a state }
+  node B { when an action }
+
+  A -> B
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word))))
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word))))
+      (edge_definition
+        source: (node_ref (identifier))
+        target: (node_ref (identifier))))))
+
+==================
+edge with body
+==================
+
+graph G {
+  node A { given a state }
+  node B { when an action }
+
+  A -> B {
+    passes { user_id, email }
+    describe "From A to B"
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word))))
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word))))
+      (edge_definition
+        source: (node_ref (identifier))
+        target: (node_ref (identifier))
+        body: (edge_body
+          (passes_clause (identifier) (identifier))
+          (describe_clause (string)))))))
+
+==================
+cross-graph edge
+==================
+
+graph G {
+  node PlaceOrder { given a logged-in user }
+
+  Auth.Login -> PlaceOrder
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word) (_step_word))))
+      (edge_definition
+        source: (node_ref (identifier) (identifier))
+        target: (node_ref (identifier))))))

@@ -1,0 +1,27 @@
+{
+  "name": "tree-sitter-tast",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the TAST DSL",
+  "main": "bindings/node",
+  "scripts": {
+    "build": "tree-sitter generate && node-gyp build",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "keywords": ["parser", "tree-sitter", "tast"],
+  "dependencies": {
+    "nan": "^2.18.0"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.23.0"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.tast",
+      "file-types": ["tast"],
+      "highlights": "queries/highlights.scm",
+      "locals": "queries/locals.scm",
+      "tags": "queries/locals.scm"
+    }
+  ]
+}

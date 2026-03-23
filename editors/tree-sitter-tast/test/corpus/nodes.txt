@@ -1,0 +1,87 @@
+==================
+node with describe
+==================
+
+graph G {
+  node Login {
+    describe "User logs in"
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (describe_clause
+          (string))))))
+
+==================
+node with tags
+==================
+
+graph G {
+  node Login {
+    tags [smoke, critical]
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (tags_clause
+          (identifier)
+          (identifier))))))
+
+==================
+node with requires
+==================
+
+graph G {
+  node PlaceOrder {
+    requires { auth_token }
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (requires_clause
+          (identifier))))))
+
+==================
+node with config
+==================
+
+graph G {
+  node Slow {
+    config { timeout: "60s" }
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (config_block
+          (data_block
+            (data_entry
+              key: (identifier)
+              value: (value (string)))))))))

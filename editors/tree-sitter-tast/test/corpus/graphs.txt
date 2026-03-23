@@ -1,0 +1,29 @@
+==================
+empty graph
+==================
+
+graph Empty {
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body)))
+
+==================
+graph with a comment
+==================
+
+# top-level comment
+graph Commented {
+}
+
+---
+
+(source_file
+  (comment)
+  (graph_definition
+    name: (identifier)
+    body: (graph_body)))

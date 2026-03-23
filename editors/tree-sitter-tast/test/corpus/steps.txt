@@ -1,0 +1,197 @@
+==================
+given step
+==================
+
+graph G {
+  node N {
+    given a user exists
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)))))))
+
+==================
+when step
+==================
+
+graph G {
+  node N {
+    when the form is submitted
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)
+            (_step_word)))))))
+
+==================
+then step
+==================
+
+graph G {
+  node N {
+    then the account is created
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)
+            (_step_word)))))))
+
+==================
+step with parameter
+==================
+
+graph G {
+  node N {
+    given a user with email <email>
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)
+            (_step_word)
+            (parameter)))))))
+
+==================
+step with inline data block
+==================
+
+graph G {
+  node N {
+    given a user with { email: "test@example.com" }
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word))
+          data: (data_block
+            (data_entry
+              key: (identifier)
+              value: (value (string)))))))))
+
+==================
+and continuation step
+==================
+
+graph G {
+  node N {
+    then the account exists
+    and the email is sent
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)))
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)))))))
+
+==================
+but negation step
+==================
+
+graph G {
+  node N {
+    then the account exists
+    but no duplicate records exist
+  }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)))
+        (step
+          keyword: (step_keyword)
+          text: (step_text
+            (_step_word)
+            (_step_word)
+            (_step_word)
+            (_step_word)))))))

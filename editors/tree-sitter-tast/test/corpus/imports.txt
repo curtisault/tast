@@ -1,0 +1,49 @@
+==================
+import statement
+==================
+
+import Auth from "./auth.tast"
+
+graph OrderFlow {
+  node PlaceOrder { given a logged-in user }
+}
+
+---
+
+(source_file
+  (import_statement
+    name: (identifier)
+    path: (string))
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word) (_step_word) (_step_word)))))))
+
+==================
+multiple imports
+==================
+
+import Auth from "./auth.tast"
+import Catalog from "./catalog.tast"
+
+graph Checkout {
+  node Pay { given an active cart }
+}
+
+---
+
+(source_file
+  (import_statement
+    name: (identifier)
+    path: (string))
+  (import_statement
+    name: (identifier)
+    path: (string))
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word) (_step_word)))))))

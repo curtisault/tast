@@ -1,0 +1,115 @@
+$schema: 'https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json'
+name: TAST
+scopeName: source.tast
+fileTypes:
+  - tast
+
+patterns:
+  - include: '#comment'
+  - include: '#import-statement'
+  - include: '#declaration'
+  - include: '#step'
+  - include: '#other-keyword'
+  - include: '#string'
+  - include: '#arrow'
+  - include: '#constant'
+  - include: '#punctuation'
+  - include: '#data-entry'
+
+repository:
+  comment:
+    name: comment.line.number-sign.tast
+    match: '#.*$'
+
+  string:
+    name: string.quoted.double.tast
+    begin: '"'
+    end: '"'
+    beginCaptures:
+      '0':
+        name: punctuation.definition.string.begin.tast
+    endCaptures:
+      '0':
+        name: punctuation.definition.string.end.tast
+    patterns:
+      - name: constant.character.escape.tast
+        match: '\\[\\\"nt]'
+
+  # import Name from "path"
+  import-statement:
+    match: '\b(import)\b\s+([A-Za-z_][A-Za-z0-9_]*)\s+(from)\b'
+    captures:
+      '1':
+        name: keyword.control.import.tast
+      '2':
+        name: entity.name.type.tast
+      '3':
+        name: keyword.control.import.tast
+
+  # graph Name / node Name / fixture Name
+  declaration:
+    match: '\b(graph|node|fixture)\b(?:\s+([A-Za-z_][A-Za-z0-9_]*))?'
+    captures:
+      '1':
+        name: keyword.declaration.tast
+      '2':
+        name: entity.name.type.tast
+
+  # Step keywords: given/when/then/and/but followed by free text to end-of-line or {
+  step:
+    name: meta.step.tast
+    begin: '\b(given|when|then|and|but)\b'
+    end: '$|(?=\{)'
+    beginCaptures:
+      '1':
+        name: keyword.control.step.tast
+    patterns:
+      - include: '#parameter'
+      - include: '#string'
+      - name: string.unquoted.step-text.tast
+        match: '[^<\{\"\n]+'
+
+  # <param> placeholder inside step text
+  parameter:
+    name: variable.parameter.tast
+    match: '<[A-Za-z_][A-Za-z0-9_]*>'
+
+  # Non-step keywords
+  other-keyword:
+    name: keyword.other.tast
+    match: '\b(describe|passes|requires|tags|config)\b'
+
+  # -> edge arrow
+  arrow:
+    name: keyword.operator.arrow.tast
+    match: '->'
+
+  # true / false / null
+  constant:
+    name: constant.language.tast
+    match: '\b(true|false|null)\b'
+
+  # Punctuation
+  punctuation:
+    patterns:
+      - name: punctuation.section.block.begin.tast
+        match: '\{'
+      - name: punctuation.section.block.end.tast
+        match: '\}'
+      - name: punctuation.section.brackets.begin.tast
+        match: '\['
+      - name: punctuation.section.brackets.end.tast
+        match: '\]'
+      - name: punctuation.separator.comma.tast
+        match: ','
+      - name: punctuation.accessor.dot.tast
+        match: '\.'
+
+  # key: value in data blocks — highlight the key distinctly
+  data-entry:
+    match: '\b([A-Za-z_][A-Za-z0-9_]*)\s*(:)'
+    captures:
+      '1':
+        name: variable.other.key.tast
+      '2':
+        name: punctuation.separator.key-value.tast

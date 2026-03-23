@@ -1,0 +1,57 @@
+==================
+fixture with string values
+==================
+
+graph G {
+  fixture AdminUser {
+    role: "admin"
+    email: "admin@example.com"
+  }
+
+  node N { given a user }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (fixture_definition
+        name: (identifier)
+        body: (data_block
+          (data_entry key: (identifier) value: (value (string)))
+          (data_entry key: (identifier) value: (value (string)))))
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word) (_step_word)))))))
+
+==================
+fixture with boolean and null values
+==================
+
+graph G {
+  fixture Flags {
+    active: true
+    deleted: false
+    notes: null
+  }
+
+  node N { given setup }
+}
+
+---
+
+(source_file
+  (graph_definition
+    name: (identifier)
+    body: (graph_body
+      (fixture_definition
+        name: (identifier)
+        body: (data_block
+          (data_entry key: (identifier) value: (value (boolean)))
+          (data_entry key: (identifier) value: (value (boolean)))
+          (data_entry key: (identifier) value: (value (null)))))
+      (node_definition
+        name: (identifier)
+        (step keyword: (step_keyword) text: (step_text (_step_word)))))))
