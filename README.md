@@ -463,6 +463,14 @@ steps:
 
 ---
 
-## 6. Implementation Details
+## 6. Editor Support
+
+TAST provides syntax highlighting for `.tast` files via a **TextMate grammar** (Sublime Text, TextMate, and others) and a **Tree-sitter grammar** (Neovim, Helix, Zed, Emacs 29+).
+
+See [editors/README.md](editors/README.md) for the full editor support table, installation instructions, and status for each editor.
+
+---
+
+## 7. Implementation Details
 
 For the full phased implementation plan, parser strategy, data flow model, language support roadmap, and design decisions, see [docs/implementation-details.md](docs/implementation-details.md).
