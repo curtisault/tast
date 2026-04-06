@@ -61,6 +61,11 @@ fn make_plan(name: &str, steps: Vec<PlanStep>) -> TestPlan {
     }
 }
 
+/// Create a temporary "project" directory for harness generation tests.
+fn temp_project() -> tempfile::TempDir {
+    tempfile::tempdir().unwrap()
+}
+
 // ── Harness generation tests ────────────────────────────────
 
 #[test]
@@ -70,7 +75,8 @@ fn elixir_e2e_harness_generation_creates_files() {
         "AuthFlow",
         vec![make_step(1, "Register"), make_step(2, "Login")],
     );
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
 
@@ -87,7 +93,8 @@ fn elixir_e2e_harness_generation_creates_files() {
 fn elixir_e2e_generated_test_file_contains_exunit() {
     let backend = ElixirBackend::new();
     let plan = make_plan("Auth", vec![make_step(1, "Register")]);
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
 
@@ -109,7 +116,8 @@ fn elixir_e2e_generated_test_file_contains_exunit() {
 fn elixir_e2e_generated_helper_module() {
     let backend = ElixirBackend::new();
     let plan = make_plan("Auth", vec![make_step(1, "Register")]);
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
 
@@ -139,7 +147,8 @@ fn elixir_e2e_generated_test_with_data() {
         parameters: vec![],
     }];
     let plan = make_plan("Auth", vec![step]);
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
     let test_path = &harness.files[1];
@@ -156,7 +165,8 @@ fn elixir_e2e_generated_test_with_data() {
 fn elixir_e2e_cleanup_removes_generated_dir() {
     let backend = ElixirBackend::new();
     let plan = make_plan("Cleanup", vec![make_step(1, "StepA")]);
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
 
     let harness = backend.generate_harness(&plan, &context).unwrap();
     let entry = harness.entry_point.clone();
@@ -177,9 +187,10 @@ fn elixir_e2e_missing_input_fails() {
         from: "Producer".to_string(),
     });
 
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
     let harness = backend.generate_harness(&plan, &context).unwrap();
-    let mut ctx = RunContext::new("/tmp");
+    let mut ctx = RunContext::new(project_dir.path());
 
     let result = backend.execute_step(&step, &harness, &mut ctx).unwrap();
 
@@ -199,9 +210,10 @@ fn elixir_e2e_spawn_failure_returns_error() {
     backend.mix_command = "nonexistent_mix_binary_xyz".into();
 
     let plan = make_plan("SpawnFail", vec![make_step(1, "StepA")]);
-    let context = RunContext::new("/tmp");
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
     let harness = backend.generate_harness(&plan, &context).unwrap();
-    let mut ctx = RunContext::new("/tmp");
+    let mut ctx = RunContext::new(project_dir.path());
 
     let result = backend.execute_step(&plan.steps[0], &harness, &mut ctx);
 
@@ -219,4 +231,168 @@ fn elixir_e2e_detect_project() {
 
     std::fs::write(dir.path().join("mix.exs"), "").unwrap();
     assert!(backend.detect_project(dir.path()));
+}
+
+// ── Companion steps file tests ──────────────────────────────
+
+#[test]
+fn elixir_e2e_companion_generates_module_calls() {
+    let backend = ElixirBackend::new();
+    let plan = make_plan("Hashids", vec![make_step(1, "BuildConfig")]);
+
+    let project_dir = temp_project();
+    let source_dir = tempfile::tempdir().unwrap();
+
+    // Create a companion steps file.
+    std::fs::write(
+        source_dir.path().join("hashids_steps.exs"),
+        "defmodule HashidsSteps do\n  def build_config(_), do: %{}\nend\n",
+    )
+    .unwrap();
+
+    let mut context = RunContext::new(project_dir.path());
+    context.source_dir = Some(source_dir.path().to_path_buf());
+    context.tast_file_stem = Some("hashids".to_owned());
+
+    let harness = backend.generate_harness(&plan, &context).unwrap();
+
+    // Should have 3 files: helper + companion + test.
+    assert_eq!(
+        harness.files.len(),
+        3,
+        "harness should include companion steps file"
+    );
+
+    // The test file should contain companion module calls.
+    let test_path = harness.files.last().unwrap();
+    let content = std::fs::read_to_string(test_path).unwrap();
+    assert!(
+        content.contains("Code.require_file(\"hashids_steps.exs\", __DIR__)"),
+        "should require companion file:\n{content}"
+    );
+    assert!(
+        content.contains("HashidsSteps.build_config(inputs)"),
+        "should call companion module:\n{content}"
+    );
+    // Should NOT contain assertion stubs.
+    assert!(
+        !content.contains("assert true"),
+        "companion mode should not have stubs:\n{content}"
+    );
+
+    let _ = backend.cleanup(&harness);
+}
+
+#[test]
+fn elixir_e2e_no_companion_generates_stubs() {
+    let backend = ElixirBackend::new();
+    let mut step = make_step(1, "BuildConfig");
+    step.assertions = vec![StepEntry {
+        step_type: "then".into(),
+        text: "config is valid".into(),
+        data: vec![],
+        parameters: vec![],
+    }];
+    let plan = make_plan("Hashids", vec![step]);
+
+    let project_dir = temp_project();
+    let context = RunContext::new(project_dir.path());
+
+    let harness = backend.generate_harness(&plan, &context).unwrap();
+
+    // Should have 2 files: helper + test (no companion).
+    assert_eq!(harness.files.len(), 2);
+
+    let test_path = harness.files.last().unwrap();
+    let content = std::fs::read_to_string(test_path).unwrap();
+    assert!(
+        content.contains("assert true"),
+        "without companion should use stubs:\n{content}"
+    );
+    assert!(
+        !content.contains("Steps."),
+        "without companion should not reference steps module:\n{content}"
+    );
+
+    let _ = backend.cleanup(&harness);
+}
+
+#[test]
+fn elixir_e2e_companion_with_inputs() {
+    let backend = ElixirBackend::new();
+    let mut step = make_step(1, "PrepareAlphabet");
+    step.inputs = vec![
+        InputEntry {
+            field: "salt".to_string(),
+            from: "BuildConfig".to_string(),
+        },
+        InputEntry {
+            field: "alphabet".to_string(),
+            from: "BuildConfig".to_string(),
+        },
+    ];
+    let plan = make_plan("Hashids", vec![step]);
+
+    let project_dir = temp_project();
+    let source_dir = tempfile::tempdir().unwrap();
+
+    std::fs::write(
+        source_dir.path().join("hashids_steps.exs"),
+        "defmodule HashidsSteps do\n  def prepare_alphabet(_), do: %{}\nend\n",
+    )
+    .unwrap();
+
+    let mut context = RunContext::new(project_dir.path());
+    context.source_dir = Some(source_dir.path().to_path_buf());
+    context.tast_file_stem = Some("hashids".to_owned());
+
+    let harness = backend.generate_harness(&plan, &context).unwrap();
+    let test_path = harness.files.last().unwrap();
+    let content = std::fs::read_to_string(test_path).unwrap();
+
+    assert!(
+        content.contains("\"salt\" => TastHelper.tast_input(\"salt\")"),
+        "should read salt input:\n{content}"
+    );
+    assert!(
+        content.contains("\"alphabet\" => TastHelper.tast_input(\"alphabet\")"),
+        "should read alphabet input:\n{content}"
+    );
+    assert!(
+        content.contains("HashidsSteps.prepare_alphabet(inputs)"),
+        "should call companion function:\n{content}"
+    );
+
+    let _ = backend.cleanup(&harness);
+}
+
+#[test]
+fn elixir_e2e_companion_copies_to_gen_dir() {
+    let backend = ElixirBackend::new();
+    let plan = make_plan("Simple", vec![make_step(1, "StepA")]);
+
+    let project_dir = temp_project();
+    let source_dir = tempfile::tempdir().unwrap();
+
+    let companion_content = "defmodule SimpleSteps do\n  def step_a(_), do: %{}\nend\n";
+    std::fs::write(
+        source_dir.path().join("simple_steps.exs"),
+        companion_content,
+    )
+    .unwrap();
+
+    let mut context = RunContext::new(project_dir.path());
+    context.source_dir = Some(source_dir.path().to_path_buf());
+    context.tast_file_stem = Some("simple".to_owned());
+
+    let harness = backend.generate_harness(&plan, &context).unwrap();
+
+    // Verify the companion was copied (not just referenced).
+    let copied = harness.entry_point.join("simple_steps.exs");
+    assert!(copied.exists(), "companion should be copied to gen dir");
+
+    let copied_content = std::fs::read_to_string(&copied).unwrap();
+    assert_eq!(copied_content, companion_content);
+
+    let _ = backend.cleanup(&harness);
 }

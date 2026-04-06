@@ -406,6 +406,7 @@ fn run_opts_with_backend(backend: &str) -> RunOptions {
         keep_harness: false,
         strategy: "topological".to_string(),
         base_url: None,
+        working_dir: None,
     }
 }
 

@@ -1,0 +1,114 @@
+# hashids — Reversible obfuscation of numerical identifiers
+#
+# Models the encode/decode pipeline as a branching graph:
+# config → alphabet preparation → encode (fan-out to round-trip and min-length paths).
+# Unlike slugify's linear chain, this graph exercises branching data flow.
+#
+# Project: https://github.com/alco/hashids-elixir
+
+graph HashidsPipeline {
+
+  node BuildConfig {
+    describe "Parse salt, alphabet, and min_len options into a Hashids struct"
+
+    given a keyword list with salt, alphabet, and min_len options
+    when Hashids.new/1 is called with the options
+    then the struct contains the parsed salt as a charlist
+    and the alphabet is uniquified and validated for minimum length
+    and spaces in the alphabet are rejected
+    tags [hashids, setup]
+  }
+
+  node PrepareAlphabet {
+    describe "Compute separators, shuffle alphabet, and extract guard characters"
+
+    given a validated alphabet and salt
+    when separators are filtered from the alphabet
+    then the remaining alphabet is consistently shuffled using the salt
+    and guard characters are split from the front of the alphabet or separators
+    and the separator-to-alphabet ratio is enforced
+    tags [hashids, alphabet]
+  }
+
+  node EncodeNumbers {
+    describe "Encode a list of non-negative integers into a hash string"
+
+    given a prepared Hashids struct and a list of numbers
+    when the numbers are reduced to a checksum
+    then a lottery character is selected from the alphabet
+    and each number is encoded using a shuffled sub-alphabet
+    and separator characters are inserted between encoded segments
+    tags [hashids, encode]
+  }
+
+  node DecodeHash {
+    describe "Decode a hash string back into the original list of numbers"
+
+    given a Hashids struct and an encoded hash string
+    when the hash is split on guard characters
+    then the lottery character is extracted from the cipher
+    and the remaining string is split on separator characters
+    and each segment is decoded back to its original number
+    tags [hashids, decode]
+  }
+
+  node VerifyRoundTrip {
+    describe "Confirm that encoding then decoding returns the original numbers"
+
+    given the original input numbers and the decoded result
+    when the decoded list is compared to the original
+    then they are identical
+    and re-encoding the decoded numbers produces the same hash string
+    tags [hashids, verify]
+  }
+
+  node EncodeWithMinLength {
+    describe "Encode numbers with a minimum output length constraint"
+
+    given a Hashids struct configured with a non-zero min_len
+    when numbers are encoded
+    then the output is padded with guards and alphabet halves to meet min_len
+    and the padding preserves decodability
+    tags [hashids, encode, padding]
+  }
+
+  node VerifyPadding {
+    describe "Confirm padded output meets the minimum length and round-trips correctly"
+
+    given a padded hash string and the min_len setting
+    when the string length is checked
+    then it is at least min_len characters long
+    and decoding the padded hash returns the original numbers
+    tags [hashids, verify, padding]
+  }
+
+  BuildConfig -> PrepareAlphabet {
+    passes { salt, alphabet, min_len }
+    describe "Parsed options flow to alphabet preparation"
+  }
+
+  PrepareAlphabet -> EncodeNumbers {
+    passes { shuffled_alphabet, separators, guards }
+    describe "Prepared alphabet, separators, and guards flow to the encoder"
+  }
+
+  PrepareAlphabet -> EncodeWithMinLength {
+    passes { shuffled_alphabet, separators, guards, min_len }
+    describe "Prepared alphabet and min_len flow to the padded encoder"
+  }
+
+  EncodeNumbers -> DecodeHash {
+    passes { hash_string, hashids_struct }
+    describe "Encoded hash string flows to the decoder"
+  }
+
+  DecodeHash -> VerifyRoundTrip {
+    passes { decoded_numbers, original_numbers, hash_string }
+    describe "Decoded numbers and originals flow to round-trip verification"
+  }
+
+  EncodeWithMinLength -> VerifyPadding {
+    passes { padded_hash, original_numbers, min_len }
+    describe "Padded hash and min_len flow to padding verification"
+  }
+}

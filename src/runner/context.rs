@@ -17,6 +17,10 @@ pub struct RunContext {
     pub capture_output: bool,
     /// Graph-level config from the test plan.
     pub graph_config: HashMap<String, String>,
+    /// Directory containing the .tast source file (for companion file discovery).
+    pub source_dir: Option<PathBuf>,
+    /// Stem of the .tast file (e.g., "hashids" from "hashids.tast").
+    pub tast_file_stem: Option<String>,
 }
 
 impl RunContext {
@@ -28,6 +32,8 @@ impl RunContext {
             working_dir: working_dir.into(),
             capture_output: true,
             graph_config: HashMap::new(),
+            source_dir: None,
+            tast_file_stem: None,
         }
     }
 
@@ -101,8 +107,17 @@ pub fn extract_step_outputs(stdout: &str) -> HashMap<String, String> {
 
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if let Some(json_str) = trimmed.strip_prefix(TAST_OUTPUT_MARKER)
-            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str)
+        // Find TAST_OUTPUT: anywhere in the line — ExUnit trace output on stderr
+        // can get concatenated on the same line as the marker.
+        let json_str = if let Some(s) = trimmed.strip_prefix(TAST_OUTPUT_MARKER) {
+            s
+        } else if let Some(pos) = trimmed.find(TAST_OUTPUT_MARKER) {
+            &trimmed[pos + TAST_OUTPUT_MARKER.len()..]
+        } else {
+            continue;
+        };
+
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str)
             && let Some(obj) = parsed.as_object()
         {
             for (key, value) in obj {
@@ -316,6 +331,28 @@ TAST_OUTPUT:{\"valid\":\"yes\"}
         let stdout = "setup complete\nTAST_OUTPUT:{\"id\":\"42\"}";
         let outputs = extract_step_outputs(stdout);
         assert_eq!(outputs["id"], "42");
+    }
+
+    #[test]
+    fn extract_outputs_marker_mid_line() {
+        // ExUnit trace output can get concatenated with TAST_OUTPUT on stderr.
+        let stdout = "  * test SplitOnDelimiters break the string [L#57]TAST_OUTPUT:{\"word_segments\":\"Hello|World\"}\n";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs["word_segments"], "Hello|World");
+    }
+
+    #[test]
+    fn extract_outputs_marker_mid_line_with_other_lines() {
+        let stdout = "\
+  * test ParseOptions [L#16]TAST_OUTPUT:{\"separator\":\"-\"}
+some other output
+  * test SplitOnDelimiters [L#57]TAST_OUTPUT:{\"segments\":\"a|b\"}
+";
+        let outputs = extract_step_outputs(stdout);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs["separator"], "-");
+        assert_eq!(outputs["segments"], "a|b");
     }
 
     // -- F1: Env var naming tests --

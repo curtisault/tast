@@ -1,0 +1,124 @@
+# slugify — Unicode string to URL-friendly slug converter
+#
+# Models the transformation pipeline: parse options → normalize input →
+# transliterate graphemes → clean punctuation → split on delimiters →
+# truncate → lowercase → validate output.
+#
+# Project: https://github.com/jayjun/slugify
+
+graph SlugifyPipeline {
+
+  node ParseOptions {
+    describe "Extract and normalize configuration from the keyword list"
+
+    given a keyword list with optional separator, lowercase, truncate, and ignore keys
+    when the options are parsed
+    then the separator is normalized to a binary string
+    and the truncate length is validated as a positive integer or nil
+    and the ignored codepoints list is built from the ignore option and separator
+    tags [slugify, options]
+  }
+
+  node NormalizeInput {
+    describe "Split input string into Unicode graphemes for processing"
+
+    given an input string in any language
+    when the string is split into graphemes
+    then each grapheme is an individually addressable unit for transliteration
+    tags [slugify, normalize]
+  }
+
+  node Transliterate {
+    describe "Convert each grapheme to its ASCII equivalent via lookup table"
+
+    given a list of graphemes and a set of ignored codepoints
+    when each grapheme is processed through the replacements map
+    then alphanumeric characters pass through unchanged
+    and ignored characters are preserved as is
+    and known Unicode characters are replaced with ASCII equivalents
+    and unknown characters are dropped
+    tags [slugify, transliterate]
+  }
+
+  node CleanPunctuation {
+    describe "Remove apostrophes and backticks from the transliterated string"
+
+    given a transliterated string that may contain apostrophes or backticks
+    when the cleaning step runs
+    then all single quotes and backticks are stripped
+    tags [slugify, clean]
+  }
+
+  node SplitOnDelimiters {
+    describe "Break the cleaned string into words on punctuation and whitespace"
+
+    given a cleaned string and a compiled regex built from separator and punctuation
+    when the string is split on the delimiter pattern
+    then the result is a list of non-empty word segments
+    and consecutive delimiters are collapsed
+    tags [slugify, split]
+  }
+
+  node TruncateToWordBoundary {
+    describe "Optionally limit slug length by truncating at the nearest word boundary"
+
+    given a list of word segments and an optional truncate length
+    when the truncate length is set
+    then words are accumulated until adding the next word would exceed the limit
+    and the result is joined with the separator
+    tags [slugify, truncate]
+  }
+
+  node ApplyLowercase {
+    describe "Convert the slug to lowercase if the lowercase option is enabled"
+
+    given a joined slug string and a lowercase flag
+    when lowercase is true
+    then the entire string is downcased
+    tags [slugify, case]
+  }
+
+  node ValidateOutput {
+    describe "Return nil for empty slugs or the final slug string"
+
+    given a processed slug string
+    when the string is empty
+    then nil is returned
+    tags [slugify, validate]
+  }
+
+  ParseOptions -> NormalizeInput {
+    passes { separator, ignored_codepoints, truncate_length, lowercase_flag }
+    describe "Parsed configuration flows alongside the input to downstream stages"
+  }
+
+  NormalizeInput -> Transliterate {
+    passes { graphemes }
+    describe "Grapheme list flows to transliteration"
+  }
+
+  Transliterate -> CleanPunctuation {
+    passes { transliterated_string }
+    describe "Transliterated string flows to apostrophe and backtick removal"
+  }
+
+  CleanPunctuation -> SplitOnDelimiters {
+    passes { cleaned_string, delimiter_regex }
+    describe "Cleaned string and compiled regex flow to the splitter"
+  }
+
+  SplitOnDelimiters -> TruncateToWordBoundary {
+    passes { word_segments }
+    describe "Word segments flow to optional truncation"
+  }
+
+  TruncateToWordBoundary -> ApplyLowercase {
+    passes { joined_slug }
+    describe "Joined slug flows to case conversion"
+  }
+
+  ApplyLowercase -> ValidateOutput {
+    passes { final_slug }
+    describe "Lowercased slug flows to empty-string validation"
+  }
+}

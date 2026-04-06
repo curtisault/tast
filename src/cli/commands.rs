@@ -357,6 +357,7 @@ pub struct RunOptions {
     pub keep_harness: bool,
     pub strategy: String,
     pub base_url: Option<String>,
+    pub working_dir: Option<PathBuf>,
 }
 
 /// Run the `run` command: parse .tast files, execute tests, and emit results.
@@ -378,7 +379,12 @@ pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
         }
     };
 
-    let working_dir = std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
+    let working_dir = match &options.working_dir {
+        Some(dir) => dir
+            .canonicalize()
+            .map_err(|e| format!("invalid working-dir '{}': {e}", dir.display()))?,
+        None => std::env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?,
+    };
 
     // Validate --base-url usage.
     if options.base_url.is_some()
@@ -399,6 +405,18 @@ pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
         );
     }
 
+    // Extract source directory and file stem from the first .tast file
+    // for companion steps file discovery.
+    let (source_dir, tast_file_stem) = options
+        .files
+        .first()
+        .map(|f| {
+            let dir = f.parent().unwrap_or(Path::new(".")).to_path_buf();
+            let stem = f.file_stem().map(|s| s.to_string_lossy().into_owned());
+            (Some(dir), stem)
+        })
+        .unwrap_or((None, None));
+
     let config = RunConfig {
         backend_name: options.backend,
         timeout: Duration::from_secs(options.timeout),
@@ -407,6 +425,8 @@ pub fn run_run(options: RunOptions) -> Result<bool, CliError> {
         capture_output: true,
         working_dir,
         clean_harness: !options.keep_harness,
+        source_dir,
+        tast_file_stem,
     };
 
     // Build the registry: include HTTP backend if --base-url was provided.

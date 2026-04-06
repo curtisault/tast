@@ -35,6 +35,67 @@ impl Default for ElixirBackend {
     }
 }
 
+impl ElixirBackend {
+    /// Detect a companion steps file next to the .tast source file.
+    ///
+    /// Convention: `<stem>_steps.exs` alongside `<stem>.tast`.
+    /// If found, copies it to the generated test directory and returns
+    /// a `CompanionInfo` with the module name and file name.
+    fn detect_companion(
+        &self,
+        context: &RunContext,
+        gen_dir: &std::path::Path,
+        files: &mut Vec<std::path::PathBuf>,
+    ) -> Result<Option<harness::CompanionInfo>, BackendError> {
+        let (Some(source_dir), Some(stem)) = (&context.source_dir, &context.tast_file_stem) else {
+            return Ok(None);
+        };
+
+        let steps_file_name = format!("{stem}_steps.exs");
+        let steps_source = source_dir.join(&steps_file_name);
+
+        if !steps_source.exists() {
+            return Ok(None);
+        }
+
+        // Copy companion file to the generated test directory.
+        let steps_dest = gen_dir.join(&steps_file_name);
+        std::fs::copy(&steps_source, &steps_dest).map_err(|e| BackendError {
+            kind: BackendErrorKind::HarnessGenerationFailed,
+            message: format!(
+                "failed to copy companion file {}: {e}",
+                steps_source.display()
+            ),
+            detail: None,
+        })?;
+        files.push(steps_dest);
+
+        // Build module name: PascalCase of stem + "Steps".
+        let module_name = to_pascal_case(stem) + "Steps";
+
+        Ok(Some(harness::CompanionInfo {
+            module_name,
+            file_name: steps_file_name,
+        }))
+    }
+}
+
+/// Convert a snake_case or lowercase string to PascalCase.
+///
+/// `"hashids"` → `"Hashids"`, `"my_steps"` → `"MySteps"`
+fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+            }
+        })
+        .collect()
+}
+
 impl TestBackend for ElixirBackend {
     fn name(&self) -> &str {
         "elixir"
@@ -47,23 +108,25 @@ impl TestBackend for ElixirBackend {
     fn generate_harness(
         &self,
         plan: &TestPlan,
-        _context: &RunContext,
+        context: &RunContext,
     ) -> Result<GeneratedHarness, BackendError> {
         let module_name = env::generated_module_name(&plan.plan.name);
         let test_file_name = format!("{}_test.exs", env::to_beam_name(&module_name));
         let helper_file_name = "tast_helper.exs";
 
-        // Create the output directory for generated files.
-        let gen_dir = tempfile::tempdir().map_err(|e| BackendError {
+        // Write generated files into the project's test/tast_generated/ directory
+        // so that `mix test` can compile and load them naturally.
+        let gen_dir = context.working_dir().join("test").join("tast_generated");
+        std::fs::create_dir_all(&gen_dir).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
-            message: format!("failed to create temp directory: {e}"),
+            message: format!("failed to create directory {}: {e}", gen_dir.display()),
             detail: None,
         })?;
 
         let mut files = Vec::new();
 
         // Write the helper module.
-        let helper_path = gen_dir.path().join(helper_file_name);
+        let helper_path = gen_dir.join(helper_file_name);
         let helper_content = harness::generate_helper_module();
         std::fs::write(&helper_path, &helper_content).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
@@ -72,9 +135,12 @@ impl TestBackend for ElixirBackend {
         })?;
         files.push(helper_path);
 
+        // Detect companion steps file.
+        let companion = self.detect_companion(context, &gen_dir, &mut files)?;
+
         // Write the test module.
-        let test_path = gen_dir.path().join(&test_file_name);
-        let test_content = harness::generate_exunit_file(plan);
+        let test_path = gen_dir.join(&test_file_name);
+        let test_content = harness::generate_exunit_file(plan, companion.as_ref());
         std::fs::write(&test_path, &test_content).map_err(|e| BackendError {
             kind: BackendErrorKind::HarnessGenerationFailed,
             message: format!("failed to write test file {test_file_name}: {e}"),
@@ -82,11 +148,9 @@ impl TestBackend for ElixirBackend {
         })?;
         files.push(test_path);
 
-        let entry_point = gen_dir.keep();
-
         Ok(GeneratedHarness {
             files,
-            entry_point,
+            entry_point: gen_dir,
             metadata: HashMap::from([
                 ("test_file".to_owned(), test_file_name),
                 ("helper_file".to_owned(), helper_file_name.to_owned()),
@@ -156,8 +220,11 @@ impl TestBackend for ElixirBackend {
 
         let duration = start.elapsed();
 
-        // Extract TAST_OUTPUT markers.
-        let outputs = context::extract_step_outputs(&output.stdout);
+        // Extract TAST_OUTPUT markers from both stdout and stderr.
+        // The TastHelper writes to :standard_error to bypass ExUnit IO capture,
+        // so markers typically appear in stderr.
+        let mut outputs = context::extract_step_outputs(&output.stdout);
+        outputs.extend(context::extract_step_outputs(&output.stderr));
         if !outputs.is_empty() {
             context.record_outputs(&step.node, outputs.clone());
         }
@@ -313,7 +380,8 @@ mod tests {
     fn elixir_backend_generate_harness_creates_files() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.entry_point.exists());
@@ -322,7 +390,14 @@ mod tests {
             assert!(file.exists());
         }
 
-        // Clean up.
+        // Harness should be inside the project's test/ directory.
+        assert!(
+            harness
+                .entry_point
+                .starts_with(project_dir.path().join("test")),
+            "harness should be inside project test/ dir"
+        );
+
         let _ = backend.cleanup(&harness);
     }
 
@@ -330,7 +405,8 @@ mod tests {
     fn elixir_backend_generate_harness_includes_helper() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.metadata.contains_key("helper_file"));
@@ -348,7 +424,8 @@ mod tests {
     fn elixir_backend_generate_harness_has_test_file() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         assert!(harness.metadata.contains_key("test_file"));
@@ -365,7 +442,8 @@ mod tests {
     fn elixir_backend_cleanup_removes_generated_dir() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         let entry = harness.entry_point.clone();
@@ -379,11 +457,132 @@ mod tests {
     fn elixir_backend_cleanup_idempotent() {
         let backend = ElixirBackend::new();
         let plan = make_test_plan();
-        let context = RunContext::new("/tmp");
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
 
         let harness = backend.generate_harness(&plan, &context).unwrap();
         backend.cleanup(&harness).unwrap();
         // Second cleanup should succeed (directory already gone).
         assert!(backend.cleanup(&harness).is_ok());
+    }
+
+    // -- Companion detection tests --
+
+    #[test]
+    fn to_pascal_case_simple() {
+        assert_eq!(to_pascal_case("hashids"), "Hashids");
+    }
+
+    #[test]
+    fn to_pascal_case_snake() {
+        assert_eq!(to_pascal_case("my_steps"), "MySteps");
+    }
+
+    #[test]
+    fn to_pascal_case_already_capitalized() {
+        assert_eq!(to_pascal_case("Foo"), "Foo");
+    }
+
+    #[test]
+    fn detect_companion_no_source_dir() {
+        let backend = ElixirBackend::new();
+        let project_dir = tempfile::tempdir().unwrap();
+        let context = RunContext::new(project_dir.path());
+        let gen_dir = project_dir.path().join("test/tast_generated");
+        std::fs::create_dir_all(&gen_dir).unwrap();
+        let mut files = Vec::new();
+
+        let result = backend
+            .detect_companion(&context, &gen_dir, &mut files)
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_companion_no_steps_file() {
+        let backend = ElixirBackend::new();
+        let project_dir = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let mut context = RunContext::new(project_dir.path());
+        context.source_dir = Some(source_dir.path().to_path_buf());
+        context.tast_file_stem = Some("hashids".to_owned());
+
+        let gen_dir = project_dir.path().join("test/tast_generated");
+        std::fs::create_dir_all(&gen_dir).unwrap();
+        let mut files = Vec::new();
+
+        let result = backend
+            .detect_companion(&context, &gen_dir, &mut files)
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_companion_finds_steps_file() {
+        let backend = ElixirBackend::new();
+        let project_dir = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+
+        // Create companion file in source dir.
+        std::fs::write(
+            source_dir.path().join("hashids_steps.exs"),
+            "defmodule HashidsSteps do\nend\n",
+        )
+        .unwrap();
+
+        let mut context = RunContext::new(project_dir.path());
+        context.source_dir = Some(source_dir.path().to_path_buf());
+        context.tast_file_stem = Some("hashids".to_owned());
+
+        let gen_dir = project_dir.path().join("test/tast_generated");
+        std::fs::create_dir_all(&gen_dir).unwrap();
+        let mut files = Vec::new();
+
+        let result = backend
+            .detect_companion(&context, &gen_dir, &mut files)
+            .unwrap();
+        let info = result.expect("should detect companion");
+        assert_eq!(info.module_name, "HashidsSteps");
+        assert_eq!(info.file_name, "hashids_steps.exs");
+
+        // Should have copied file to gen_dir.
+        assert!(gen_dir.join("hashids_steps.exs").exists());
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn generate_harness_with_companion_includes_steps_file() {
+        let backend = ElixirBackend::new();
+        let plan = make_test_plan();
+        let project_dir = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+
+        std::fs::write(
+            source_dir.path().join("auth_steps.exs"),
+            "defmodule AuthSteps do\nend\n",
+        )
+        .unwrap();
+
+        let mut context = RunContext::new(project_dir.path());
+        // tast_file_stem must match the steps file naming convention.
+        context.source_dir = Some(source_dir.path().to_path_buf());
+        context.tast_file_stem = Some("auth".to_owned());
+
+        let harness = backend.generate_harness(&plan, &context).unwrap();
+        // Should have 3 files: helper + steps + test.
+        assert_eq!(harness.files.len(), 3);
+
+        // The test file should contain companion calls.
+        let test_content = std::fs::read_to_string(harness.files.last().unwrap()).unwrap();
+        assert!(
+            test_content.contains("Code.require_file(\"auth_steps.exs\", __DIR__)"),
+            "test file should require companion:\n{test_content}"
+        );
+        assert!(
+            test_content.contains("AuthSteps.register_user(inputs)"),
+            "test file should call companion module:\n{test_content}"
+        );
+
+        let _ = backend.cleanup(&harness);
     }
 }
